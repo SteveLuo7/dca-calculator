@@ -285,7 +285,7 @@ def normalize_kline_df(df: pd.DataFrame, limit: int | None = None, yearly: bool 
 
 
 def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: str = "compact") -> list[dict[str, Any]]:
-    """获取K线数据，支持多数据源降级策略：AKShare -> Yahoo Finance -> 备份数据"""
+    """获取K线数据，支持多数据源降级策略：AKShare（大陆优先）-> Yahoo Finance（海外辅助）-> 备份数据"""
     code = normalize_code(code)
     period = period if period in {"daily", "weekly", "monthly", "yearly"} else "daily"
     end_date = datetime.now().strftime("%Y%m%d")
@@ -300,14 +300,14 @@ def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: 
     source_used = None
 
     try:
-        # 数据源1: AKShare (优先尝试)
+        # 数据源1: AKShare（大陆可访问，优先尝试）
         df, source_used = _try_akshare_kline(actual_code, security, fetch_period, start_date, end_date)
         
-        # 数据源2: Yahoo Finance (如果AKShare失败)
+        # 数据源2: Yahoo Finance（仅在AKShare失败时使用，海外辅助）
         if df is None or df.empty:
             df, source_used = _try_yahoo_kline(actual_code, security, period, range_, days)
             
-        # 数据源3: 静态备份数据 (如果都失败)
+        # 数据源3: 静态备份数据（最后兜底）
         if df is None or df.empty:
             df, source_used = _generate_fallback_kline(actual_code, security, days, period, range_)
 
@@ -699,13 +699,14 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
 
 
 def fetch_stock_news(code: str, limit: int = 12) -> list[dict[str, Any]]:
-    """获取股票新闻，支持多数据源降级策略：东方财富 -> 新浪财经 -> 腾讯新闻 -> 财联社 -> 搜索入口"""
+    """获取股票新闻，支持多数据源降级策略：东方财富 -> 财联社 -> 同花顺 -> 新浪财经 -> 搜索入口
+    优先使用大陆可访问的直接新闻源"""
     code = normalize_code(code)
     security = resolve_security(code)
     articles: list[dict[str, Any]] = []
     source_used = None
 
-    # 数据源1: 东方财富 (A股优先)
+    # 数据源1: 东方财富 (A股直接新闻)
     if code.isdigit() and len(code) == 6:
         try:
             df = ak.stock_news_em(symbol=code)
@@ -733,14 +734,105 @@ def fetch_stock_news(code: str, limit: int = 12) -> list[dict[str, Any]]:
         except Exception as exc:
             logger.debug("东方财富新闻获取失败 %s: %s", code, exc)
 
-    # 数据源2: 新浪财经 (港股、美股)
+    # 数据源2: 东方财富美股/港股新闻 (尝试获取海外市场新闻)
+    if len(articles) < min(limit, 4):
+        try:
+            # 尝试使用stock_news_em获取美股港股新闻（如果支持）
+            symbol = security.get("yahoo_symbol", code)
+            if symbol and not symbol.isdigit():
+                try:
+                    df = ak.stock_news_em(symbol=symbol)
+                    if df is not None and not df.empty:
+                        title_col = first_col(list(df.columns), ["新闻标题", "标题", "title"], ["标题", "title"])
+                        url_col = first_col(list(df.columns), ["新闻链接", "链接", "url"], ["链接", "url"])
+                        date_col = first_col(list(df.columns), ["发布时间", "时间", "日期", "date"], ["时间", "日期", "date"])
+                        source_col = first_col(list(df.columns), ["文章来源", "来源", "source"], ["来源", "source"])
+                        summary_col = first_col(list(df.columns), ["新闻内容", "内容", "摘要"], ["内容", "摘要"])
+
+                        for _, row in df.head(limit - len(articles)).iterrows():
+                            title = str(row.get(title_col, "")).strip() if title_col else ""
+                            if not title:
+                                continue
+                            articles.append(
+                                {
+                                    "title": title,
+                                    "url": str(row.get(url_col, "")).strip() if url_col else "",
+                                    "source": str(row.get(source_col, "东方财富")).strip() if source_col else "东方财富",
+                                    "published_at": str(row.get(date_col, "")).strip() if date_col else "",
+                                    "summary": str(row.get(summary_col, "")).strip()[:180] if summary_col else "",
+                                }
+                            )
+                        source_used = source_used or "东方财富 · 海外市场新闻"
+                except Exception:
+                    pass
+        except Exception as exc:
+            logger.debug("东方财富海外新闻获取失败 %s: %s", code, exc)
+
+    # 数据源3: 财联社 (尝试获取快讯)
+    if len(articles) < min(limit, 4):
+        try:
+            # 财联社快讯接口
+            keyword = quote(f"{security.get('name', code)}")
+            cls_url = f"https://www.cls.cn/searchPage?keyword={keyword}"
+            
+            # 获取财联社新闻（尝试直接访问新闻列表）
+            try:
+                import httpx
+                client = httpx.Client(timeout=5.0, follow_redirects=True)
+                try:
+                    response = client.get(
+                        "https://www.cls.cn/telegraph",
+                        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                    )
+                    if response.status_code == 200:
+                        articles.append({
+                            "title": f"{security.get('name', code)} - 财联社实时快讯",
+                            "url": "https://www.cls.cn/telegraph",
+                            "source": "财联社快讯",
+                            "published_at": "实时更新",
+                            "summary": f"点击查看财联社关于{security.get('name', code)}的实时市场快讯和专业分析。"
+                        })
+                        if not source_used:
+                            source_used = "财联社 · 实时快讯"
+                finally:
+                    client.close()
+            except Exception:
+                # 降级为搜索入口
+                articles.append({
+                    "title": f"{security.get('name', code)} - 财联社市场动态",
+                    "url": cls_url,
+                    "source": "财联社",
+                    "published_at": "实时入口",
+                    "summary": f"点击查看{security.get('name', code)}在财联社的专业市场分析和快讯。"
+                })
+                if not source_used:
+                    source_used = "财联社 · 搜索入口"
+        except Exception as exc:
+            logger.debug("财联社新闻获取失败 %s: %s", code, exc)
+
+    # 数据源4: 同花顺 (尝试获取新闻)
     if len(articles) < min(limit, 4):
         try:
             keyword = quote(f"{security.get('name', code)}")
-            # 新浪财经搜索接口
+            # 同花顺资讯
+            articles.append({
+                "title": f"{security.get('name', code)} - 同花顺资讯中心",
+                "url": f"http://news.10jqka.com.cn/search/{keyword}",
+                "source": "同花顺",
+                "published_at": "实时入口",
+                "summary": f"点击查看{security.get('name', code)}在同花顺的市场资讯和深度分析。"
+            })
+            if not source_used:
+                source_used = "同花顺 · 资讯中心"
+        except Exception as exc:
+            logger.debug("同顺新闻获取失败 %s: %s", code, exc)
+
+    # 数据源5: 新浪财经 (仅当其他数据源不足时使用)
+    if len(articles) < min(limit, 4):
+        try:
+            keyword = quote(f"{security.get('name', code)}")
             search_url = f"https://search.sina.com.cn/?q={keyword}&c=news&time=&page=1"
             
-            # 添加搜索入口作为新闻来源
             articles.append({
                 "title": f"{security.get('name', code)} - 新浪财经实时资讯",
                 "url": search_url,
@@ -748,47 +840,12 @@ def fetch_stock_news(code: str, limit: int = 12) -> list[dict[str, Any]]:
                 "published_at": "实时入口",
                 "summary": f"点击查看{security.get('name', code)}在新浪财经的最新新闻和市场动态。"
             })
-            source_used = "新浪财经 · 搜索入口"
+            if not source_used:
+                source_used = "新浪财经 · 搜索入口"
         except Exception as exc:
             logger.debug("新浪财经新闻获取失败 %s: %s", code, exc)
 
-    # 数据源3: 腾讯新闻
-    if len(articles) < min(limit, 4):
-        try:
-            keyword = quote(f"{security.get('name', code)}")
-            tencent_url = f"https://news.qq.com/search?query={keyword}"
-            
-            articles.append({
-                "title": f"{security.get('name', code)} - 腾讯新闻实时资讯",
-                "url": tencent_url,
-                "source": "腾讯新闻",
-                "published_at": "实时入口",
-                "summary": f"点击查看{security.get('name', code)}在腾讯新闻的最新资讯和行情分析。"
-            })
-            if not source_used:
-                source_used = "腾讯新闻 · 搜索入口"
-        except Exception as exc:
-            logger.debug("腾讯新闻获取失败 %s: %s", code, exc)
-
-    # 数据源4: 财联社 (专业财经新闻)
-    if len(articles) < min(limit, 4):
-        try:
-            keyword = quote(f"{security.get('name', code)}")
-            cls_url = f"https://www.cls.cn/searchPage?keyword={keyword}"
-            
-            articles.append({
-                "title": f"{security.get('name', code)} - 财联社市场动态",
-                "url": cls_url,
-                "source": "财联社",
-                "published_at": "实时入口",
-                "summary": f"点击查看{security.get('name', code)}在财联社的专业市场分析和快讯。"
-            })
-            if not source_used:
-                source_used = "财联社 · 搜索入口"
-        except Exception as exc:
-            logger.debug("财联社新闻获取失败 %s: %s", code, exc)
-
-    # 数据源5: 东方财富搜索 (补充来源)
+    # 数据源6: 东方财富搜索 (补充来源，只在需要时添加)
     if len(articles) < limit:
         try:
             keyword = quote(f"{security.get('name', code)} {code}")
@@ -808,12 +865,12 @@ def fetch_stock_news(code: str, limit: int = 12) -> list[dict[str, Any]]:
     if not articles:
         articles.append({
             "title": f"{security.get('name', code)} - 相关资讯",
-            "url": f"https://www.google.com/search?q={quote(security.get('name', code))}",
-            "source": "Google搜索",
+            "url": f"https://www.baidu.com/s?wd={quote(security.get('name', code))}",
+            "source": "百度搜索",
             "published_at": "实时入口",
-            "summary": f"暂无该标的的新闻数据，点击使用Google搜索{security.get('name', code)}的相关资讯。"
+            "summary": f"暂无该标的的新闻数据，点击使用百度搜索{security.get('name', code)}的相关资讯。"
         })
-        source_used = "Google搜索 · 备用入口"
+        source_used = "百度搜索 · 备用入口"
 
     return articles[:limit]
 
@@ -1063,7 +1120,7 @@ def get_news(code: str, limit: int = Query(default=12, ge=1, le=30)) -> dict[str
         "articles": articles,
         "count": len(articles),
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "source": "东方财富实时新闻；备份为东方财富/新浪/腾讯/财联社搜索入口",
+        "source": "东方财富直接新闻（大陆优先）；备份为财联社/同花顺/新浪财经/百度搜索入口",
         "message": "" if articles else "暂无相关新闻或数据源暂不可用",
     }
 
