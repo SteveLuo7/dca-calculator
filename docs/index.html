@@ -38,6 +38,17 @@
   .main-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
   .left-col, .right-col { display: flex; flex-direction: column; gap: 14px; }
   .panel, .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .overview-panel { padding: 16px; }
+  .overview-content { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .overview-item { display: flex; flex-direction: column; gap: 4px; }
+  .overview-label { font-size: 11px; color: var(--text2); }
+  .overview-value { font-size: 16px; font-weight: 600; font-family: var(--mono); }
+  .overview-value.up { color: var(--red); }
+  .overview-value.down { color: var(--green); }
+  .overview-value.neutral { color: var(--text); }
+  .overview-sub { font-size: 12px; font-family: var(--mono); }
+  .overview-sub.up { color: var(--red); }
+  .overview-sub.down { color: var(--green); }
   .panel { padding: 18px; }
   .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
   .panel-title { color: var(--text3); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
@@ -183,9 +194,16 @@
     </div>
 
     <div class="right-col">
+      <section class="panel overview-panel">
+        <div class="panel-title">总览</div>
+        <div class="overview-content" id="overviewContent">
+          <div class="loading"><span class="spin"></span>加载中...</div>
+        </div>
+      </section>
+
       <div class="stat-grid" id="statCards">
         <div class="stat-card" style="grid-column:1/-1">
-          <div class="empty">选择指数或股票后，点击“计算收益预测”查看结果。</div>
+          <div class="empty">选择指数或股票后，点击"计算收益预测"查看结果。</div>
         </div>
       </div>
 
@@ -357,7 +375,7 @@ async function selectIndex(code) {
 
 async function refreshSelectedCode() {
   const code = state.selectedCode;
-  await Promise.all([fetchPE(code), fetchNews(code)]);
+  await Promise.all([fetchPE(code), fetchNews(code), fetchOverview(code)]);
   if (state.chartMode === 'kline') loadKline();
 }
 
@@ -391,6 +409,62 @@ async function fetchPEHistory(code) {
   } catch (e) {
     state.peHistory = [];
   }
+}
+
+async function fetchOverview(code) {
+  const el = document.getElementById('overviewContent');
+  el.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
+  try {
+    const res = await fetch(`${API}/api/quote/${encodeURIComponent(code)}`);
+    if (!res.ok) throw new Error('Quote API error');
+    const data = await res.json();
+    renderOverview(data);
+    return data;
+  } catch (e) {
+    el.innerHTML = '<div class="empty">暂无行情数据</div>';
+  }
+}
+
+function renderOverview(data) {
+  const el = document.getElementById('overviewContent');
+  const price = data.price !== null && data.price !== undefined ? data.price.toFixed(4) : '-';
+  const change = data.change !== null && data.change !== undefined ? data.change.toFixed(4) : '-';
+  const changePct = data.change_pct !== null && data.change_pct !== undefined ? data.change_pct.toFixed(2) : '-';
+  const isUp = data.change_pct > 0;
+  const isDown = data.change_pct < 0;
+  const changeClass = isUp ? 'up' : isDown ? 'down' : 'neutral';
+  const prefix = isUp ? '+' : '';
+
+  el.innerHTML = `
+    <div class="overview-item">
+      <span class="overview-label">代码</span>
+      <span class="overview-value neutral">${data.code}</span>
+    </div>
+    <div class="overview-item">
+      <span class="overview-label">名称</span>
+      <span class="overview-value neutral">${data.name}</span>
+    </div>
+    <div class="overview-item">
+      <span class="overview-label">实时价格</span>
+      <span class="overview-value neutral">${price}</span>
+    </div>
+    <div class="overview-item">
+      <span class="overview-label">涨跌额</span>
+      <span class="overview-value ${changeClass}">${prefix}${change}</span>
+    </div>
+    <div class="overview-item">
+      <span class="overview-label">涨跌幅</span>
+      <span class="overview-value ${changeClass}">${prefix}${changePct}%</span>
+    </div>
+    <div class="overview-item">
+      <span class="overview-label">市场</span>
+      <span class="overview-value neutral">${data.market}</span>
+    </div>
+    <div class="overview-item" style="grid-column:1/-1">
+      <span class="overview-label">更新时间</span>
+      <span class="overview-sub">${data.updated_at || '-'}</span>
+    </div>
+  `;
 }
 
 function renderPEBlock(data) {
@@ -469,7 +543,7 @@ function renderChart() {
     if (!state.calcResult) {
       clearLineChart();
       document.getElementById('growthLegend').innerHTML = '';
-      document.getElementById('lineChartWrap').innerHTML = '<div class="empty">点击“计算收益预测”后显示收益曲线</div>';
+      document.getElementById('lineChartWrap').innerHTML = '<div class="empty">点击"计算收益预测"后显示收益曲线</div>';
       return;
     }
     const { bear, base, bull } = state.calcResult;
