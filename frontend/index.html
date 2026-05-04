@@ -75,7 +75,8 @@
   .market-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
   /* 市场内容区域 */
-  .market-content.hidden { display: none !important; }
+  .market-content { display: none; }
+  .market-content.active { display: block; }
 
   /* 区域标签页（旧样式，保留兼容） */
   .region-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -220,17 +221,17 @@
         </div>
 
         <!-- 亚洲市场指数 -->
-        <div class="market-content" id="asiaContent">
+        <div class="market-content active" id="asiaContent">
           <div class="asset-grid" id="asiaGrid"></div>
         </div>
 
         <!-- 欧洲市场指数 -->
-        <div class="market-content" id="europeContent" style="display:none">
+        <div class="market-content" id="europeContent">
           <div class="asset-grid" id="europeGrid"></div>
         </div>
 
         <!-- 美洲市场指数 -->
-        <div class="market-content" id="americasContent" style="display:none">
+        <div class="market-content" id="americasContent">
           <div class="asset-grid" id="americasGrid"></div>
         </div>
       </section>
@@ -446,12 +447,13 @@ async function loadAsiaIndices() {
     const data = await res.json();
     const indices = (data.results || []).filter(item => item.asset_type === 'index');
 
+    console.log('Asia indices loaded:', indices.length);
     grid.innerHTML = indices.length > 0
       ? indices.map(asset => renderAssetCard(asset)).join('')
       : '<div class="empty">暂无指数数据</div>';
   } catch (e) {
-    grid.innerHTML = '<div class="empty">加载失败</div>';
     console.error('Asia indices error:', e);
+    grid.innerHTML = '<div class="empty">加载失败</div>';
   }
 }
 
@@ -465,12 +467,13 @@ async function loadEuropeIndices() {
     const data = await res.json();
     const indices = (data.results || []).filter(item => item.asset_type === 'index');
 
+    console.log('Europe indices loaded:', indices.length);
     grid.innerHTML = indices.length > 0
       ? indices.map(asset => renderAssetCard(asset)).join('')
       : '<div class="empty">暂无指数数据</div>';
   } catch (e) {
-    grid.innerHTML = '<div class="empty">加载失败</div>';
     console.error('Europe indices error:', e);
+    grid.innerHTML = '<div class="empty">加载失败</div>';
   }
 }
 
@@ -484,12 +487,13 @@ async function loadAmericasIndices() {
     const data = await res.json();
     const indices = (data.results || []).filter(item => item.asset_type === 'index');
 
+    console.log('Americas indices loaded:', indices.length);
     grid.innerHTML = indices.length > 0
       ? indices.map(asset => renderAssetCard(asset)).join('')
       : '<div class="empty">暂无指数数据</div>';
   } catch (e) {
-    grid.innerHTML = '<div class="empty">加载失败</div>';
     console.error('Americas indices error:', e);
+    grid.innerHTML = '<div class="empty">加载失败</div>';
   }
 }
 
@@ -1033,9 +1037,11 @@ document.querySelectorAll('.market-tab').forEach(btn => {
     btn.classList.add('active');
 
     const market = btn.dataset.market;
-    document.getElementById('asiaContent').style.display = market === 'asia' ? 'block' : 'none';
-    document.getElementById('europeContent').style.display = market === 'europe' ? 'block' : 'none';
-    document.getElementById('americasContent').style.display = market === 'americas' ? 'block' : 'none';
+    document.querySelectorAll('.market-content').forEach(content => content.classList.remove('active'));
+    const targetContent = document.getElementById(market + 'Content');
+    if (targetContent) {
+      targetContent.classList.add('active');
+    }
   });
 });
 
@@ -1056,7 +1062,20 @@ window.addEventListener('resize', () => {
 });
 
 document.getElementById('updateTime').textContent = new Date().toLocaleString('zh-CN');
-loadMarketIndices();
+
+// 初始化页面
+async function initPage() {
+  await loadMarketIndices();
+  // 初始化选中默认代码
+  if (state.selectedCode) {
+    await refreshSelectedCode();
+  }
+}
+
+// 启动页面加载
+initPage().catch(err => {
+  console.error('初始化失败:', err);
+});
 </script>
 </body>
 </html>
