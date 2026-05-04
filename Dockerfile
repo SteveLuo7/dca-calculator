@@ -7,7 +7,7 @@ COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend source
-COPY backend/main.py .
+COPY backend/*.py .
 
 # Copy frontend (served as static files by nginx, but include for reference)
 COPY frontend/ /app/frontend/

@@ -41,6 +41,11 @@ docker-compose up -d
 ```bash
 cd backend
 pip install -r requirements.txt
+
+# 测试模块导入（可选）
+python test_imports.py
+
+# 启动服务
 uvicorn main:app --reload --port 8000
 ```
 
