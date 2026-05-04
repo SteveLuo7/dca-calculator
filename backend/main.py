@@ -761,6 +761,114 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
     return fallback_quote(security)
 
 
+def fetch_financial_reports(code: str, limit: int = 5) -> list[dict[str, Any]]:
+    """获取财务年报数据，支持多数据源降级策略"""
+    code = normalize_code(code)
+    security = resolve_security(code)
+    reports: list[dict[str, Any]] = []
+    source_used = None
+
+    # 目前主要支持A股和基金的财务数据
+    if code.isdigit() and len(code) == 6:
+        try:
+            # 数据源1: 东方财富 - 财务摘要
+            df = ak.stock_financial_analysis_indicator(symbol=code)
+            if df is not None and not df.empty:
+                date_col = first_col(list(df.columns), ["日期", "date"], ["日期", "date"])
+                roe_col = first_col(list(df.columns), ["净资产收益率", "ROE"], ["净资产收益率", "ROE"])
+                roa_col = first_col(list(df.columns), ["总资产收益率", "ROA"], ["总资产收益率", "ROA"])
+                eps_col = first_col(list(df.columns), ["每股收益", "EPS"], ["每股收益", "EPS"])
+                revenue_col = first_col(list(df.columns), ["营业收入", "营收"], ["营业收入", "营收"])
+                net_profit_col = first_col(list(df.columns), ["净利润"], ["净利润"])
+                total_assets_col = first_col(list(df.columns), ["总资产"], ["总资产"])
+
+                if date_col:
+                    df = df.sort_values(date_col, ascending=False).head(limit)
+                    for _, row in df.iterrows():
+                        year = str(row.get(date_col, "")).strip()[:4]
+                        if not year or not year.isdigit():
+                            continue
+
+                        report = {
+                            "year": year,
+                            "report_type": "年报",
+                            "roe": round(safe_float(row.get(roe_col), 0) or 0, 2) if roe_col else None,
+                            "roa": round(safe_float(row.get(roa_col), 0) or 0, 2) if roa_col else None,
+                            "eps": round(safe_float(row.get(eps_col), 0) or 0, 4) if eps_col else None,
+                            "revenue": round(safe_float(row.get(revenue_col), 0) or 0, 2) if revenue_col else None,
+                            "net_profit": round(safe_float(row.get(net_profit_col), 0) or 0, 2) if net_profit_col else None,
+                            "total_assets": round(safe_float(row.get(total_assets_col), 0) or 0, 2) if total_assets_col else None,
+                            "source": "东方财富"
+                        }
+                        reports.append(report)
+                    source_used = "东方财富 · 财务分析指标"
+        except Exception as exc:
+            logger.debug("东方财富财务数据获取失败 %s: %s", code, exc)
+
+    # 数据源2: 使用财务报表接口（尝试获取更详细数据）
+    if len(reports) < limit and code.isdigit() and len(code) == 6:
+        try:
+            df = ak.stock_financial_abstract(symbol=code)
+            if df is not None and not df.empty:
+                date_col = first_col(list(df.columns), ["日期", "date"], ["日期", "date"])
+                revenue_col = first_col(list(df.columns), ["营业总收入"], ["营业总收入"])
+                profit_col = first_col(list(df.columns), ["净利润"], ["净利润"])
+                eps_col = first_col(list(df.columns), ["基本每股收益"], ["基本每股收益"])
+
+                if date_col:
+                    df = df.sort_values(date_col, ascending=False).head(limit)
+                    for _, row in df.iterrows():
+                        year = str(row.get(date_col, "")).strip()[:4]
+                        if not year or not year.isdigit():
+                            continue
+
+                        # 检查是否已有该年份的数据
+                        if not any(r["year"] == year for r in reports):
+                            report = {
+                                "year": year,
+                                "report_type": "年报",
+                                "roe": None,
+                                "roa": None,
+                                "eps": round(safe_float(row.get(eps_col), 0) or 0, 4) if eps_col else None,
+                                "revenue": round(safe_float(row.get(revenue_col), 0) or 0, 2) if revenue_col else None,
+                                "net_profit": round(safe_float(row.get(profit_col), 0) or 0, 2) if profit_col else None,
+                                "total_assets": None,
+                                "source": "东方财富 · 财务报表摘要"
+                            }
+                            reports.append(report)
+                    source_used = source_used or "东方财富 · 财务报表摘要"
+        except Exception as exc:
+            logger.debug("财务报表摘要获取失败 %s: %s", code, exc)
+
+    # 数据源3: 如果是基金，尝试获取基金业绩
+    if len(reports) < limit and code.isdigit() and len(code) == 6 and code.startswith(FUND_PREFIXES):
+        try:
+            df = ak.fund_etf_fund_info_em(symbol=code)
+            if df is not None and not df.empty:
+                # 基金通常没有年报，我们展示基本信息
+                reports.append({
+                    "year": str(datetime.now().year),
+                    "report_type": "基金信息",
+                    "roe": None,
+                    "roa": None,
+                    "eps": None,
+                    "revenue": None,
+                    "net_profit": None,
+                    "total_assets": None,
+                    "fund_type": "ETF/基金",
+                    "note": "基金产品无传统财务报表，请查看净值走势和分红信息",
+                    "source": "东方财富 · 基金信息"
+                })
+                source_used = "东方财富 · 基金信息"
+        except Exception as exc:
+            logger.debug("基金信息获取失败 %s: %s", code, exc)
+
+    # 按年份排序
+    reports.sort(key=lambda x: x.get("year", "0"), reverse=True)
+
+    return reports[:limit]
+
+
 def fetch_stock_news(code: str, limit: int = 12) -> list[dict[str, Any]]:
     """获取股票新闻，支持多数据源降级策略：东方财富 -> 财联社 -> 同花顺 -> 新浪财经 -> 搜索入口
     优先使用大陆可访问的直接新闻源"""
@@ -1185,6 +1293,24 @@ def get_news(code: str, limit: int = Query(default=12, ge=1, le=30)) -> dict[str
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "source": "东方财富直接新闻（大陆优先）；备份为财联社/同花顺/新浪财经/百度搜索入口",
         "message": "" if articles else "暂无相关新闻或数据源暂不可用",
+    }
+
+
+@app.get("/api/financial_reports/{code}")
+def get_financial_reports(code: str, limit: int = Query(default=5, ge=1, le=10)) -> dict[str, Any]:
+    code = normalize_code(code)
+    security = resolve_security(code)
+    reports = fetch_financial_reports(code, limit)
+    return {
+        "code": code,
+        "name": security.get("name", code),
+        "market": security.get("market", "-"),
+        "asset_type": security.get("asset_type", "stock"),
+        "reports": reports,
+        "count": len(reports),
+        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "source": reports[0].get("source", "东方财富") if reports else "暂无财务数据",
+        "message": "" if reports else "该标的暂无财务年报数据（基金/指数/海外标的通常无财务报表）",
     }
 
 
