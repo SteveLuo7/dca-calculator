@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新UI测试页面</title>
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #f5f5f5;
+    margin: 0;
+    padding: 20px;
+  }
+  .test-container {
+    max-width: 400px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 8px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+  .test-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 20px;
+    color: #333;
+    border-bottom: 2px solid #4f8ef7;
+    padding-bottom: 10px;
+  }
+  .section {
+    margin-bottom: 30px;
+    padding: 15px;
+    border-radius: 8px;
+    border: 2px solid;
+  }
+  .section-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .search-section {
+    background: rgba(79,142,247,0.05);
+    border-color: #4f8ef7;
+  }
+  .search-section .section-title {
+    color: #4f8ef7;
+  }
+  .market-section {
+    background: rgba(46,204,150,0.05);
+    border-color: #2ecc96;
+  }
+  .market-section .section-title {
+    color: #2ecc96;
+  }
+  .tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 8px;
+  }
+  .tab {
+    flex: 1;
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    color: #666;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    text-align: center;
+  }
+  .tab.active {
+    background: #2ecc96;
+    color: white;
+    border-color: #2ecc96;
+  }
+  .content {
+    display: none;
+    padding: 10px;
+    background: #f8f8f8;
+    border-radius: 4px;
+    min-height: 100px;
+  }
+  .content.active {
+    display: block;
+  }
+  .search-input {
+    width: 100%;
+    padding: 10px 12px 10px 36px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .market-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    background: white;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+    margin-bottom: 8px;
+  }
+  .market-emoji {
+    font-size: 16px;
+  }
+  .market-name {
+    flex: 1;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .market-count {
+    font-size: 11px;
+    background: #eee;
+    padding: 2px 8px;
+    border-radius: 3px;
+    color: #666;
+  }
+  .item {
+    padding: 8px 12px;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .info {
+    margin-top: 20px;
+    padding: 15px;
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  .info strong {
+    color: #856404;
+  }
+</style>
+</head>
+<body>
+<div class="test-container">
+  <div class="test-title">新UI界面测试</div>
+
+  <!-- 搜索模块 -->
+  <div class="section search-section">
+    <div class="section-title">🔍 搜索标的</div>
+    <input type="text" class="search-input" placeholder="输入代码、名称或公司进行搜索..." />
+  </div>
+
+  <!-- 市场指数模块 -->
+  <div class="section market-section">
+    <div class="section-title">🌍 选择市场指数</div>
+
+    <div class="tabs">
+      <div class="tab active" data-market="asia">🏯 亚洲市场</div>
+      <div class="tab" data-market="europe">🏰 欧洲市场</div>
+      <div class="tab" data-market="americas">🗽 美洲市场</div>
+    </div>
+
+    <div class="content active" data-content="asia">
+      <div class="market-header">
+        <span class="market-emoji">🏯</span>
+        <span class="market-name">亚洲市场</span>
+        <span class="market-count">12 个指数</span>
+      </div>
+      <div class="item">沪深300 (000300)</div>
+      <div class="item">上证指数 (000001)</div>
+      <div class="item">恒生指数 (HSI)</div>
+    </div>
+
+    <div class="content" data-content="europe">
+      <div class="market-header">
+        <span class="market-emoji">🏰</span>
+        <span class="market-name">欧洲市场</span>
+        <span class="market-count">8 个指数</span>
+      </div>
+      <div class="item">德国DAX (DAX)</div>
+      <div class="item">英国富时100 (UKX)</div>
+      <div class="item">法国CAC40 (CAC)</div>
+    </div>
+
+    <div class="content" data-content="americas">
+      <div class="market-header">
+        <span class="market-emoji">🗽</span>
+        <span class="market-name">美洲市场</span>
+        <span class="market-count">10 个指数</span>
+      </div>
+      <div class="item">标普500 (SPX)</div>
+      <div class="item">纳斯达克100 (NDX)</div>
+      <div class="item">道琼斯工业 (DJI)</div>
+    </div>
+  </div>
+
+  <div class="info">
+    <strong>UI改进说明：</strong><br>
+    ✅ <strong>搜索模块</strong>：蓝色边框和阴影，独立的视觉样式<br>
+    ✅ <strong>市场模块</strong>：绿色边框和阴影，三个市场的视觉分隔<br>
+    ✅ <strong>标签切换</strong>：每个市场有独特的图标和头部<br>
+    ✅ <strong>数量显示</strong>：每个市场显示指数数量统计<br>
+    ✅ <strong>独立模块</strong>：搜索和市场指数完全分离的视觉设计
+  </div>
+</div>
+
+<script>
+// 标签切换逻辑
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+
+    tab.classList.add('active');
+    const market = tab.dataset.market;
+    document.querySelector(`[data-content="${market}"]`).classList.add('active');
+  });
+});
+</script>
+</body>
+</html>
