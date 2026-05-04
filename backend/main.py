@@ -361,17 +361,39 @@ def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: 
 
     try:
         df: pd.DataFrame | None = None
+        # A股指数
         if code in INDEX_KLINE_CODES:
             df = ak.index_zh_a_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date)
+        # A股基金
         elif code.isdigit() and len(code) == 6 and code.startswith(FUND_PREFIXES):
             try:
                 df = ak.fund_etf_hist_em(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="")
             except Exception:
                 df = ak.stock_zh_a_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="")
+        # A股股票
         elif code.isdigit() and len(code) == 6:
             df = ak.stock_zh_a_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="")
+        # 海外指数（美股、港股等）
+        elif code in INDEX_CONFIG:
+            try:
+                df = ak.index_global_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date)
+            except Exception as exc:
+                logger.debug("Overseas index kline failed for %s: %s", code, exc)
+                df = None
+        # 海外股票（美股、港股等）
         else:
-            return []
+            # 尝试获取海外股票K线数据
+            try:
+                # 处理港股代码 (0700.HK -> 0700)
+                hk_code = code.replace(".HK", "")
+                if hk_code.isdigit() and len(hk_code) == 4:
+                    df = ak.stock_hk_hist(symbol=hk_code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="qfq")
+                # 处理美股代码 (AAPL, MSFT等)
+                elif code.isalpha() and len(code) <= 6 and not code.endswith((".HK", ".US")):
+                    df = ak.stock_us_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="")
+            except Exception as exc:
+                logger.debug("Overseas stock kline failed for %s: %s", code, exc)
+                return []
 
         limit = None if range_ == "all" or period == "yearly" else days
         return normalize_kline_df(df, limit=limit, yearly=period == "yearly")
@@ -405,6 +427,138 @@ def fallback_quote(security: dict[str, Any]) -> dict[str, Any]:
 def fetch_quote_data(code: str) -> dict[str, Any]:
     security = resolve_security(code)
     code = security["code"]
+    
+    # 尝试获取实时行情数据
+    try:
+        # A股行情
+        if code.isdigit() and len(code) == 6:
+            df = ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                code_col = first_col(list(df.columns), ["代码", "code"], ["代码", "code"])
+                if code_col:
+                    row_df = df[df[code_col].astype(str).str.zfill(6) == code]
+                    if not row_df.empty:
+                        row = row_df.iloc[0]
+                        price_col = first_col(list(df.columns), ["最新价", "close", "price"], ["最新价", "收盘"])
+                        name_col = first_col(list(df.columns), ["名称", "name"], ["名称", "name"])
+                        change_col = first_col(list(df.columns), ["涨跌额", "change"], ["涨跌额", "change"])
+                        pct_col = first_col(list(df.columns), ["涨跌幅", "pct_chg"], ["涨跌幅", "pct"])
+                        price = safe_float(row.get(price_col)) if price_col else None
+                        if price is not None and price > 0:
+                            change = safe_float(row.get(change_col), 0) or 0 if change_col else 0
+                            change_pct = safe_float(row.get(pct_col), 0) or 0 if pct_col else 0
+                            return {
+                                "code": code,
+                                "name": str(row.get(name_col, code)).strip() if name_col else security.get("name", code),
+                                "market": security.get("market", "-"),
+                                "asset_type": security.get("asset_type", "stock"),
+                                "price": round(price, 4),
+                                "previous_close": round(price - change, 4) if change else None,
+                                "change": round(change, 4),
+                                "change_pct": round(change_pct, 2),
+                                "source": "AKShare · 东方财富实时行情",
+                                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            }
+        # 海外指数行情
+        elif code in INDEX_CONFIG:
+            try:
+                df = ak.index_global_spot()
+                if df is not None and not df.empty:
+                    name_col = first_col(list(df.columns), ["名称", "name"], ["名称", "name"])
+                    price_col = first_col(list(df.columns), ["最新价", "close", "price"], ["最新价", "收盘"])
+                    change_col = first_col(list(df.columns), ["涨跌额", "change"], ["涨跌额", "change"])
+                    pct_col = first_col(list(df.columns), ["涨跌幅", "pct_chg"], ["涨跌幅", "pct"])
+                    if name_col and price_col:
+                        row_df = df[df[name_col].astype(str) == INDEX_CONFIG[code]["name"]]
+                        if not row_df.empty:
+                            row = row_df.iloc[0]
+                            price = safe_float(row.get(price_col)) if price_col else None
+                            if price is not None and price > 0:
+                                change = safe_float(row.get(change_col), 0) or 0 if change_col else 0
+                                change_pct = safe_float(row.get(pct_col), 0) or 0 if pct_col else 0
+                                return {
+                                    "code": code,
+                                    "name": security.get("name", code),
+                                    "market": security.get("market", "-"),
+                                    "asset_type": security.get("asset_type", "stock"),
+                                    "price": round(price, 4),
+                                    "previous_close": round(price - change, 4) if change else None,
+                                    "change": round(change, 4),
+                                    "change_pct": round(change_pct, 2),
+                                    "source": "AKShare · 全球指数实时行情",
+                                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                }
+            except Exception as exc:
+                logger.debug("Overseas index quote failed for %s: %s", code, exc)
+        # 港股行情
+        elif code.endswith(".HK") or (len(code) == 4 and code.isdigit()):
+            try:
+                hk_code = code.replace(".HK", "")
+                df = ak.stock_hk_spot_em()
+                if df is not None and not df.empty:
+                    code_col = first_col(list(df.columns), ["代码", "code"], ["代码", "code"])
+                    name_col = first_col(list(df.columns), ["名称", "name"], ["名称", "name"])
+                    price_col = first_col(list(df.columns), ["最新价", "close", "price"], ["最新价", "收盘"])
+                    change_col = first_col(list(df.columns), ["涨跌额", "change"], ["涨跌额", "change"])
+                    pct_col = first_col(list(df.columns), ["涨跌幅", "pct_chg"], ["涨跌幅", "pct"])
+                    if code_col and price_col:
+                        row_df = df[df[code_col].astype(str) == hk_code]
+                        if not row_df.empty:
+                            row = row_df.iloc[0]
+                            price = safe_float(row.get(price_col)) if price_col else None
+                            if price is not None and price > 0:
+                                change = safe_float(row.get(change_col), 0) or 0 if change_col else 0
+                                change_pct = safe_float(row.get(pct_col), 0) or 0 if pct_col else 0
+                                return {
+                                    "code": code,
+                                    "name": str(row.get(name_col, code)).strip() if name_col else security.get("name", code),
+                                    "market": "港股",
+                                    "asset_type": security.get("asset_type", "stock"),
+                                    "price": round(price, 4),
+                                    "previous_close": round(price - change, 4) if change else None,
+                                    "change": round(change, 4),
+                                    "change_pct": round(change_pct, 2),
+                                    "source": "AKShare · 港股实时行情",
+                                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                }
+            except Exception as exc:
+                logger.debug("HK stock quote failed for %s: %s", code, exc)
+        # 美股行情
+        elif code.isalpha() and len(code) <= 6 and not code.endswith((".HK", ".US")):
+            try:
+                df = ak.stock_us_spot_em()
+                if df is not None and not df.empty:
+                    code_col = first_col(list(df.columns), ["代码", "code", "symbol"], ["代码", "code", "symbol"])
+                    name_col = first_col(list(df.columns), ["名称", "name"], ["名称", "name"])
+                    price_col = first_col(list(df.columns), ["最新价", "close", "price"], ["最新价", "收盘"])
+                    change_col = first_col(list(df.columns), ["涨跌额", "change"], ["涨跌额", "change"])
+                    pct_col = first_col(list(df.columns), ["涨跌幅", "pct_chg"], ["涨跌幅", "pct"])
+                    if code_col and price_col:
+                        row_df = df[df[code_col].astype(str) == code]
+                        if not row_df.empty:
+                            row = row_df.iloc[0]
+                            price = safe_float(row.get(price_col)) if price_col else None
+                            if price is not None and price > 0:
+                                change = safe_float(row.get(change_col), 0) or 0 if change_col else 0
+                                change_pct = safe_float(row.get(pct_col), 0) or 0 if pct_col else 0
+                                return {
+                                    "code": code,
+                                    "name": str(row.get(name_col, code)).strip() if name_col else security.get("name", code),
+                                    "market": "美股",
+                                    "asset_type": security.get("asset_type", "stock"),
+                                    "price": round(price, 4),
+                                    "previous_close": round(price - change, 4) if change else None,
+                                    "change": round(change, 4),
+                                    "change_pct": round(change_pct, 2),
+                                    "source": "AKShare · 美股实时行情",
+                                    "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                }
+            except Exception as exc:
+                logger.debug("US stock quote failed for %s: %s", code, exc)
+    except Exception as exc:
+        logger.debug("Quote fetch failed for %s: %s", code, exc)
+
+    # 如果实时行情获取失败，从K线数据获取最新价格
     rows = fetch_kline_data(code, days=8, period="daily")
     if len(rows) >= 1:
         latest = rows[-1]
@@ -422,7 +576,7 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
             "previous_close": round(previous_close, 4),
             "change": round(change, 4),
             "change_pct": round(change_pct, 2),
-            "source": "AKShare · 东方财富/新浪（备份：静态行情基准）",
+            "source": "AKShare · K线最新价（实时行情暂不可用）",
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
     return fallback_quote(security)
