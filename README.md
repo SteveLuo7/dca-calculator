@@ -7,11 +7,13 @@
 
 ## 功能特性
 
-- 📊 **实时 PE 数据**：接入 AKShare，自动获取沪深300、上证50、中证500、创业板指等指数的最新 PE、PB 及10年历史分位
-- 📈 **三情景预测**：基于盈利收益率模型，自动估算悲观/基准/乐观三种年化回报
-- 🗂 **30年收益明细**：逐年展示累计投入、组合价值、总收益率、年化回报
-- 📉 **PE历史走势图**：可视化过去10年PE走势，判断当前估值位置
-- ⬇ **多格式导出**：导出 Excel（含三情景工作表）/ CSV / 打印PDF
+- **实时 PE/PB 数据**：接入 AKShare，获取 A 股指数实时 PE、PB 及 10 年历史分位；海外/缺失数据自动降级为默认值
+- **指数 / 股票查询**：支持预设指数，也支持输入股票或指数代码，例如 `000300`、`600519`、`SPX`
+- **三情景预测**：基于盈利收益率模型，估算悲观、基准、乐观三种年化回报
+- **30 年收益明细**：逐年展示累计投入、组合价值、收益额、总收益率、年化回报
+- **图表分析**：支持收益曲线、PE 历史走势、K 线行情和成交量图
+- **相关新闻**：查询标的相关新闻，A 股股票优先使用东方财富新闻源
+- **多格式导出**：支持 Excel、CSV、打印 / PDF
 
 ---
 
@@ -68,18 +70,17 @@ cd /opt/dca-calculator
 docker-compose up -d
 ```
 
-### Vercel（仅前端）+ Railway（后端）
+### Railway / Vercel / GitHub Pages
 
-**前端 → Vercel：**
-- 将 `frontend/index.html` 推送到 GitHub
-- 在 `index.html` 中将 API 地址改为 Railway 后端的 URL
-- Vercel 导入 GitHub 仓库，自动部署
+**Railway 单服务部署：**
+- 本项目的 `Dockerfile` 会复制 `frontend/` 并由 FastAPI 直接托管前端页面
+- 页面入口是 `frontend/index.html`，不是仓库根目录的 `index.html`
+- Railway 部署时使用根目录和 `Dockerfile` 即可
 
-**后端 → Railway：**
-- 推送整个项目到 GitHub
-- Railway 新建项目，选择 GitHub 仓库
-- 设置启动命令：`uvicorn main:app --host 0.0.0.0 --port $PORT`
-- 设置根目录：`backend`
+**Vercel 或 GitHub Pages 仅前端部署：**
+- Vercel 建议部署 `frontend/index.html`
+- GitHub Pages 通常会读取 `docs/index.html`，需要保持它和 `frontend/index.html` 同步
+- 前端中的 API 地址需要指向 Railway 后端 URL
 
 ---
 
