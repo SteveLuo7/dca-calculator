@@ -140,7 +140,7 @@
         <div class="panel-title">选择指数 / 股票</div>
         <div class="idx-grid" id="idxGrid"></div>
         <div class="field" style="margin-bottom:0">
-          <label>自定义代码，例如 000300、600519、SPX</label>
+          <label>自定义代码，例如 000300、600519、HSI、SPX</label>
           <input id="customCode" type="text" placeholder="输入后按回车查询" />
         </div>
       </section>
@@ -158,7 +158,7 @@
       <section class="panel">
         <div class="panel-title">定投参数</div>
         <div class="field">
-          <label>每期定投金额（元）</label>
+          <label>每期定投金额</label>
           <input id="amount" type="number" value="2000" min="100" step="100" />
         </div>
         <div class="field-row">
@@ -288,9 +288,14 @@ const PRESETS = [
   { code:'SPX', name:'标普500', market:'美股', default_pe:22, earnings_growth:7 },
 ];
 const mktClass = { 'A股':'mkt-a', '港股':'mkt-hk', '美股':'mkt-us' };
-const fmt = n => '¥' + Math.round(n).toLocaleString('zh-CN');
 const fmtP = r => (r * 100).toFixed(1) + '%';
 const fmtN = n => Math.round(n).toLocaleString('zh-CN');
+
+// 根据当前货币格式化金额
+const fmt = n => {
+  const currencySymbol = CURRENCY_SYMBOLS[state.currentCurrency] || '¥';
+  return currencySymbol + Math.round(n).toLocaleString('zh-CN');
+};
 
 let state = {
   selectedCode: '000300',
@@ -458,16 +463,18 @@ function runCalc() {
 }
 
 function renderStatCards(base, bull) {
+  const currencySymbol = CURRENCY_SYMBOLS[state.currentCurrency] || '¥';
   document.getElementById('statCards').innerHTML = [10, 20, 30].map(y => {
     const d = base[y - 1];
     const b = bull[y - 1];
+    const fmtCurr = n => currencySymbol + Math.round(n).toLocaleString('zh-CN');
     return `
       <div class="stat-card">
         <div class="sc-yr">${y} 年后（基准）</div>
-        <div class="sc-val">${fmt(d.fv)}</div>
-        <div class="sc-invested">投入 ${fmt(d.invested)}</div>
+        <div class="sc-val">${fmtCurr(d.fv)}</div>
+        <div class="sc-invested">投入 ${fmtCurr(d.invested)}</div>
         <div class="sc-ret">+${fmtP(d.gainPct)} 总回报</div>
-        <div class="sc-sub">乐观: ${fmt(b.fv)}</div>
+        <div class="sc-sub">乐观: ${fmtCurr(b.fv)}</div>
       </div>`;
   }).join('');
 }
@@ -509,12 +516,13 @@ function renderGrowthChart(labels, base, bull, bear) {
   document.getElementById('growthLegend').innerHTML = [
     { c:'#2ecc96', l:'乐观' }, { c:'#4f8ef7', l:'基准' }, { c:'#f06060', l:'悲观' }, { c:'#5d667d', l:'累计投入' },
   ].map(x => `<span class="leg"><span class="leg-dot" style="background:${x.c}"></span>${x.l}</span>`).join('');
+  const currencySymbol = CURRENCY_SYMBOLS[state.currentCurrency] || '¥';
   drawLineChart(labels, [
     { label:'乐观', data: bull.map(d => d.fv), borderColor:'#2ecc96', borderWidth:2, pointRadius:0, tension:.3 },
     { label:'基准', data: base.map(d => d.fv), borderColor:'#4f8ef7', borderWidth:2.5, pointRadius:0, tension:.3 },
     { label:'悲观', data: bear.map(d => d.fv), borderColor:'#f06060', borderWidth:2, pointRadius:0, borderDash:[4,3], tension:.3 },
     { label:'累计投入', data: base.map(d => d.invested), borderColor:'#5d667d', borderWidth:1.5, pointRadius:0, borderDash:[2,2], tension:0 },
-  ], v => v >= 1e8 ? `¥${(v / 1e8).toFixed(1)}亿` : v >= 1e4 ? `¥${(v / 1e4).toFixed(0)}万` : `¥${v}`);
+  ], v => v >= 1e8 ? `${currencySymbol}${(v / 1e8).toFixed(1)}亿` : v >= 1e4 ? `${currencySymbol}${(v / 1e4).toFixed(0)}万` : `${currencySymbol}${v}`);
 }
 
 function renderPEHistChart() {
@@ -590,15 +598,16 @@ async function loadKline(days = 120, btn = null) {
     if (state.klineData.length > 0) {
       state.currentCurrency = state.klineData[0].currency || 'CNY';
     }
+    const dataSource = state.klineData.length > 0 ? (state.klineData[0].data_source || data.source || '未知数据源') : '无数据';
     document.getElementById('klineTitle').textContent = `${data.name || state.selectedCode} 行情`;
-    renderKlineChart(state.klineData);
+    renderKlineChart(state.klineData, dataSource);
   } catch (e) {
     state.klineData = [];
     renderKlineChart([]);
   }
 }
 
-function renderKlineChart(rows) {
+function renderKlineChart(rows, dataSource = '') {
   const legend = document.getElementById('growthLegend');
   if (!rows.length || !window.LightweightCharts) {
     legend.innerHTML = '<div class="empty" style="padding:10px 0">暂无 K 线数据</div>';
@@ -614,7 +623,8 @@ function renderKlineChart(rows) {
     <span class="leg"><span class="leg-dot" style="background:${chg >= 0 ? '#f06060' : '#2ecc96'}"></span>收盘 ${currencySymbol}${latest.close.toFixed(2)}</span>
     <span class="leg">${latest.time}</span>
     <span class="leg" style="color:${chg >= 0 ? '#f06060' : '#2ecc96'}">${chg >= 0 ? '+' : ''}${currencySymbol}${chg.toFixed(2)}</span>
-    <span class="leg" style="color:#5d667d">${state.currentCurrency}</span>`;
+    <span class="leg" style="color:#5d667d">${state.currentCurrency}</span>
+    <span class="leg" style="color:#9aa2b8">${dataSource}</span>`;
 
   const upColor = '#f06060';
   const downColor = '#2ecc96';
@@ -652,12 +662,14 @@ function renderTable(mode) {
   if (!state.calcResult) return;
   const data = state.calcResult[mode];
   const hl = new Set([9, 19, 29]);
+  const currencySymbol = CURRENCY_SYMBOLS[state.currentCurrency] || '¥';
+  const fmtCurr = n => currencySymbol + Math.round(n).toLocaleString('zh-CN');
   document.getElementById('tableBody').innerHTML = data.map((d, i) => `
     <tr class="${hl.has(i) ? 'hl' : ''}">
       <td>第${d.yr}年</td>
-      <td>${fmtN(d.invested)}</td>
-      <td>${fmtN(d.fv)}</td>
-      <td class="pos">+${fmtN(d.gain)}</td>
+      <td>${fmtCurr(d.invested)}</td>
+      <td>${fmtCurr(d.fv)}</td>
+      <td class="pos">+${fmtCurr(d.gain)}</td>
       <td class="pos">+${fmtP(d.gainPct)}</td>
       <td>${fmtP(d.annualEff)}</td>
     </tr>`).join('');
@@ -725,18 +737,20 @@ function exportClientExcel() {
   const { base, bull, bear, rates, amount, freq, pe } = state.calcResult;
   const wb = XLSX.utils.book_new();
   const name = state.peData?.name || state.selectedCode;
+  const currencySymbol = CURRENCY_SYMBOLS[state.currentCurrency] || '¥';
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
     ['参数', '值'],
     ['标的', `${name}（${state.selectedCode}）`],
     ['当前PE', pe],
-    ['每期定投', amount],
+    ['货币', state.currentCurrency],
+    ['每期定投', `${currencySymbol}${amount}`],
     ['定投频率', freq],
     ['悲观年化', fmtP(rates.bear)],
     ['基准年化', fmtP(rates.base)],
     ['乐观年化', fmtP(rates.bull)],
   ]), '参数设置');
   [['基准情景', base], ['乐观情景', bull], ['悲观情景', bear]].forEach(([sheet, data]) => {
-    const rows = [['年份', '累计投入', '组合价值', '收益额', '总收益率', '年化回报']];
+    const rows = [['年份', `累计投入(${currencySymbol})`, `组合价值(${currencySymbol})`, `收益额(${currencySymbol})`, '总收益率', '年化回报']];
     data.forEach(d => rows.push([`第${d.yr}年`, d.invested, d.fv, d.gain, fmtP(d.gainPct), fmtP(d.annualEff)]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sheet);
   });
