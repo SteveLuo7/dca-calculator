@@ -725,6 +725,7 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
                 logger.debug("HK stock quote failed for %s: %s", code, exc)
         # 美股行情
         elif code.isalpha() and len(code) <= 6 and not code.endswith((".HK", ".US")):
+            # 尝试1: AKShare美股实时行情
             try:
                 df = ak.stock_us_spot_em()
                 if df is not None and not df.empty:
@@ -734,7 +735,7 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
                     change_col = first_col(list(df.columns), ["涨跌额", "change"], ["涨跌额", "change"])
                     pct_col = first_col(list(df.columns), ["涨跌幅", "pct_chg"], ["涨跌幅", "pct"])
                     if code_col and price_col:
-                        row_df = df[df[code_col].astype(str) == code]
+                        row_df = df[df[code_col].astype(str).str.upper() == code.upper()]
                         if not row_df.empty:
                             row = row_df.iloc[0]
                             price = safe_float(row.get(price_col)) if price_col else None
@@ -755,7 +756,62 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
                                     "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 }
             except Exception as exc:
-                logger.debug("US stock quote failed for %s: %s", code, exc)
+                logger.debug("US stock quote (AKShare) failed for %s: %s", code, exc)
+
+            # 尝试2: yfinance - 更准确的美股价格数据
+            try:
+                import yfinance as yf
+                ticker = yf.Ticker(code)
+                info = ticker.info
+                if info:
+                    price = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
+                    if price and price > 0:
+                        previous_close = info.get("previousClose") or price
+                        change = price - previous_close
+                        change_pct = (change / previous_close * 100) if previous_close else 0
+                        return {
+                            "code": code,
+                            "name": info.get("longName") or info.get("shortName") or security.get("name", code),
+                            "market": "美股",
+                            "asset_type": security.get("asset_type", "stock"),
+                            "price": round(price, 4),
+                            "previous_close": round(previous_close, 4),
+                            "change": round(change, 4),
+                            "change_pct": round(change_pct, 2),
+                            "currency": "USD",
+                            "source": "yfinance · Yahoo Finance实时数据（高精度）",
+                            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        }
+            except Exception as exc:
+                logger.debug("US stock quote (yfinance) failed for %s: %s", code, exc)
+
+            # 尝试3: yfinance历史数据作为最后备份
+            try:
+                import yfinance as yf
+                ticker = yf.Ticker(code)
+                hist = ticker.history(period="5d")
+                if hist is not None and not hist.empty:
+                    latest = hist.iloc[-1]
+                    price = latest.get("Close")
+                    if price and price > 0:
+                        previous_close = hist.iloc[-2].get("Close") if len(hist) > 1 else price
+                        change = price - previous_close
+                        change_pct = (change / previous_close * 100) if previous_close else 0
+                        return {
+                            "code": code,
+                            "name": security.get("name", code),
+                            "market": "美股",
+                            "asset_type": security.get("asset_type", "stock"),
+                            "price": round(price, 4),
+                            "previous_close": round(previous_close, 4),
+                            "change": round(change, 4),
+                            "change_pct": round(change_pct, 2),
+                            "currency": "USD",
+                            "source": "yfinance · Yahoo Finance历史数据（备份）",
+                            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        }
+            except Exception as exc:
+                logger.debug("US stock quote (yfinance history) failed for %s: %s", code, exc)
     except Exception as exc:
         logger.debug("Quote fetch failed for %s: %s", code, exc)
     return fallback_quote(security)
@@ -767,6 +823,9 @@ def fetch_financial_reports(code: str, limit: int = 5) -> list[dict[str, Any]]:
     security = resolve_security(code)
     reports: list[dict[str, Any]] = []
     source_used = None
+
+    logger.info("Fetching financial reports for code: %s, market: %s, asset_type: %s", 
+                code, security.get("market"), security.get("asset_type"))
 
     # 目前主要支持A股和基金的财务数据
     if code.isdigit() and len(code) == 6:
@@ -789,6 +848,9 @@ def fetch_financial_reports(code: str, limit: int = 5) -> list[dict[str, Any]]:
                         if not year or not year.isdigit():
                             continue
 
+                        # 添加财报下载链接
+                        download_url = f"https://data.eastmoney.com/bbsj/{code}/{year}.html"
+
                         report = {
                             "year": year,
                             "report_type": "年报",
@@ -798,10 +860,12 @@ def fetch_financial_reports(code: str, limit: int = 5) -> list[dict[str, Any]]:
                             "revenue": round(safe_float(row.get(revenue_col), 0) or 0, 2) if revenue_col else None,
                             "net_profit": round(safe_float(row.get(net_profit_col), 0) or 0, 2) if net_profit_col else None,
                             "total_assets": round(safe_float(row.get(total_assets_col), 0) or 0, 2) if total_assets_col else None,
+                            "download_url": download_url,
                             "source": "东方财富"
                         }
                         reports.append(report)
                     source_used = "东方财富 · 财务分析指标"
+                    logger.info("Fetched %d financial reports from 东方财富 for code %s", len(reports), code)
         except Exception as exc:
             logger.debug("东方财富财务数据获取失败 %s: %s", code, exc)
 
@@ -824,6 +888,8 @@ def fetch_financial_reports(code: str, limit: int = 5) -> list[dict[str, Any]]:
 
                         # 检查是否已有该年份的数据
                         if not any(r["year"] == year for r in reports):
+                            download_url = f"https://data.eastmoney.com/bbsj/{code}/{year}.html"
+
                             report = {
                                 "year": year,
                                 "report_type": "年报",
@@ -833,10 +899,12 @@ def fetch_financial_reports(code: str, limit: int = 5) -> list[dict[str, Any]]:
                                 "revenue": round(safe_float(row.get(revenue_col), 0) or 0, 2) if revenue_col else None,
                                 "net_profit": round(safe_float(row.get(profit_col), 0) or 0, 2) if profit_col else None,
                                 "total_assets": None,
+                                "download_url": download_url,
                                 "source": "东方财富 · 财务报表摘要"
                             }
                             reports.append(report)
                     source_used = source_used or "东方财富 · 财务报表摘要"
+                    logger.info("Fetched %d financial reports from 财务报表摘要 for code %s", len(reports), code)
         except Exception as exc:
             logger.debug("财务报表摘要获取失败 %s: %s", code, exc)
 
@@ -857,14 +925,18 @@ def fetch_financial_reports(code: str, limit: int = 5) -> list[dict[str, Any]]:
                     "total_assets": None,
                     "fund_type": "ETF/基金",
                     "note": "基金产品无传统财务报表，请查看净值走势和分红信息",
+                    "download_url": f"http://fund.eastmoney.com/{code}.html",
                     "source": "东方财富 · 基金信息"
                 })
                 source_used = "东方财富 · 基金信息"
+                logger.info("Fetched fund info for code %s", code)
         except Exception as exc:
             logger.debug("基金信息获取失败 %s: %s", code, exc)
 
     # 按年份排序
     reports.sort(key=lambda x: x.get("year", "0"), reverse=True)
+
+    logger.info("Final financial reports for code %s: %d reports, source: %s", code, len(reports), source_used or "None")
 
     return reports[:limit]
 

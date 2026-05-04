@@ -122,6 +122,9 @@
   .metric-value { color: var(--text2); font-family: var(--mono); font-weight: 500; font-size: 12px; }
   .metric-value.highlight { color: var(--accent); }
   .financial-source { margin-top: 8px; color: var(--text3); font-size: 10px; }
+  .financial-download { margin-top: 8px; }
+  .financial-download a { color: var(--accent); text-decoration: none; font-size: 11px; border: 1px solid var(--border); padding: 4px 8px; border-radius: 4px; display: inline-block; transition: .15s; }
+  .financial-download a:hover { background: var(--accent); color: white; border-color: var(--accent); }
   .empty { color: var(--text3); text-align: center; padding: 34px 18px; font-size: 13px; }
   .toast { position: fixed; right: 24px; bottom: 24px; z-index: 99; opacity: 0; pointer-events: none; transform: translateY(10px); transition: .25s; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
   .toast.show { opacity: 1; transform: translateY(0); }
@@ -825,6 +828,7 @@ function renderFinancialReports(items, message) {
           ${metrics.join('')}
         </div>
         <div class="financial-source">来源: ${item.source}</div>
+        ${item.download_url ? `<div class="financial-download"><a href="${item.download_url}" target="_blank" rel="noopener noreferrer">📄 查看完整财报</a></div>` : ''}
       </div>`;
   }).join('')}</div>`;
 }
