@@ -53,25 +53,6 @@
   .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
   .panel-title { color: var(--text3); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 
-  /* 搜索框样式 */
-  .search-container { position: relative; margin-bottom: 16px; }
-  .search-input { width: 100%; background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 10px 36px; outline: none; }
-  .search-input:focus { border-color: var(--accent); }
-  .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 14px; }
-  .search-suggestions { position: absolute; top: 100%; left: 0; right: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; max-height: 300px; overflow-y: auto; z-index: 100; display: none; }
-  .search-suggestions.show { display: block; }
-  .suggestion-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
-  .suggestion-item:hover { background: var(--bg3); }
-  .suggestion-code { font-family: var(--mono); font-size: 11px; color: var(--accent); }
-  .suggestion-name { font-size: 13px; color: var(--text); }
-  .suggestion-meta { display: flex; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--text3); }
-  .suggestion-tag { padding: 2px 6px; border-radius: 4px; background: rgba(79,142,247,.12); color: var(--accent); }
-  .suggestion-tag.hot { background: rgba(245,166,35,.12); color: var(--amber); }
-
-  /* 搜索模块特殊样式 */
-  .panel.search-module { border: 1px solid var(--accent); box-shadow: 0 0 20px rgba(79,142,247,0.15); }
-  .panel.search-module .panel-title { color: var(--accent); }
-
   /* 市场标签页 */
   .market-tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
   .market-tab { border: 1px solid var(--border); background: transparent; color: var(--text2); border-radius: 6px; padding: 8px 16px; font-size: 12px; cursor: pointer; transition: .15s; flex: 1; text-align: center; }
@@ -81,6 +62,11 @@
   /* 市场内容区域 */
   .market-content { display: none; }
   .market-content.active { display: block; }
+
+  /* 市场分区样式 */
+  .market-section { margin-bottom: 20px; }
+  .market-section:last-child { margin-bottom: 0; }
+  .section-title { font-size: 12px; font-weight: 600; color: var(--text2); margin-bottom: 8px; padding: 6px 10px; background: var(--bg2); border-radius: 4px; }
 
   /* 市场指数模块特殊样式 */
   .panel.market-module { border: 1px solid var(--green); box-shadow: 0 0 20px rgba(46,204,150,0.15); }
@@ -208,40 +194,51 @@
 
   <div class="main-grid">
     <div class="left-col">
-      <!-- 搜索模块 - 完全独立 -->
-      <section class="panel search-module" style="margin-bottom: 20px;">
-        <div class="panel-title">🔍 全局搜索</div>
-        <div class="search-container">
-          <span class="search-icon">📋</span>
-          <input id="searchInput" class="search-input" type="text" placeholder="输入代码、名称或公司进行搜索..." />
-          <div id="searchSuggestions" class="search-suggestions"></div>
-        </div>
-      </section>
-
-      <!-- 市场指数选择模块 - 完全独立 -->
-      <section class="panel market-module" style="margin-bottom: 20px;">
-        <div class="panel-title">🌍 市场指数（按地区分类）</div>
+      <!-- 市场选择模块 -->
+      <section class="panel market-module">
+        <div class="panel-title">🌍 选择市场</div>
 
         <!-- 市场标签页 -->
         <div class="market-tabs" id="marketTabs">
-          <button class="market-tab active" data-market="asia">🏯 亚洲市场</button>
-          <button class="market-tab" data-market="europe">🏰 欧洲市场</button>
+          <button class="market-tab" data-market="asia">🏯 亚洲市场</button>
+          <button class="market-tab active" data-market="europe">🏰 欧洲市场</button>
           <button class="market-tab" data-market="americas">🗽 美洲市场</button>
         </div>
 
-        <!-- 亚洲市场指数 -->
-        <div class="market-content active" id="asiaContent">
-          <div class="asset-grid" id="asiaGrid"></div>
+        <!-- 亚洲市场内容 -->
+        <div class="market-content" id="asiaContent">
+          <div class="market-section">
+            <div class="section-title">📈 权重股票</div>
+            <div class="asset-grid" id="asiaStockGrid"></div>
+          </div>
+          <div class="market-section">
+            <div class="section-title">💰 基金</div>
+            <div class="asset-grid" id="asiaFundGrid"></div>
+          </div>
         </div>
 
-        <!-- 欧洲市场指数 -->
-        <div class="market-content" id="europeContent">
-          <div class="asset-grid" id="europeGrid"></div>
+        <!-- 欧洲市场内容 -->
+        <div class="market-content active" id="europeContent">
+          <div class="market-section">
+            <div class="section-title">📈 权重股票</div>
+            <div class="asset-grid" id="europeStockGrid"></div>
+          </div>
+          <div class="market-section">
+            <div class="section-title">💰 基金</div>
+            <div class="asset-grid" id="europeFundGrid"></div>
+          </div>
         </div>
 
-        <!-- 美洲市场指数 -->
+        <!-- 美洲市场内容 -->
         <div class="market-content" id="americasContent">
-          <div class="asset-grid" id="americasGrid"></div>
+          <div class="market-section">
+            <div class="section-title">📈 权重股票</div>
+            <div class="asset-grid" id="americasStockGrid"></div>
+          </div>
+          <div class="market-section">
+            <div class="section-title">💰 基金</div>
+            <div class="asset-grid" id="americasFundGrid"></div>
+          </div>
         </div>
       </section>
 
@@ -399,7 +396,7 @@ let state = {
 let chartInst = null;
 let klineChart = null;
 let volumeChart = null;
-let searchTimer = null;
+
 
 function toast(msg, dur=2600) {
   const el = document.getElementById('toast');
@@ -437,72 +434,132 @@ function renderAssetCard(asset) {
     </div>`;
 }
 
-// 加载各市场指数
-async function loadMarketIndices() {
-  await Promise.all([
-    loadAsiaIndices(),
-    loadEuropeIndices(),
-    loadAmericasIndices()
-  ]);
-}
+// 加载各市场数据
+async function loadMarketData() {
+  // 只加载当前激活的市场
+  const activeTab = document.querySelector('.market-tab.active');
+  const market = activeTab?.dataset.market || 'europe';
 
-async function loadAsiaIndices() {
-  const grid = document.getElementById('asiaGrid');
-  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载亚洲市场指数...</div>';
-
-  try {
-    const res = await fetch(`${API}/api/search?region=亚洲市场&asset_type=index&limit=50`);
-    if (!res.ok) throw new Error('API error');
-    const data = await res.json();
-    const indices = (data.results || []).filter(item => item.asset_type === 'index');
-
-    console.log('Asia indices loaded:', indices.length);
-    grid.innerHTML = indices.length > 0
-      ? indices.map(asset => renderAssetCard(asset)).join('')
-      : '<div class="empty">暂无亚洲市场指数数据</div>';
-  } catch (e) {
-    console.error('Asia indices error:', e);
-    grid.innerHTML = '<div class="empty">加载亚洲市场指数失败</div>';
+  if (market === 'asia') {
+    await loadAsiaMarket();
+  } else if (market === 'europe') {
+    await loadEuropeMarket();
+  } else if (market === 'americas') {
+    await loadAmericasMarket();
   }
 }
 
-async function loadEuropeIndices() {
-  const grid = document.getElementById('europeGrid');
-  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载欧洲市场指数...</div>';
+async function loadAsiaMarket() {
+  // 加载亚洲市场权重股票
+  const stockGrid = document.getElementById('asiaStockGrid');
+  stockGrid.innerHTML = '<div class="loading"><span class="spin"></span>加载股票...</div>';
 
   try {
-    const res = await fetch(`${API}/api/search?region=欧洲市场&asset_type=index&limit=50`);
+    const res = await fetch(`${API}/api/search?region=亚洲市场&asset_type=stock&limit=20`);
     if (!res.ok) throw new Error('API error');
     const data = await res.json();
-    const indices = (data.results || []).filter(item => item.asset_type === 'index');
+    const stocks = (data.results || []).filter(item => item.asset_type === 'stock');
 
-    console.log('Europe indices loaded:', indices.length);
-    grid.innerHTML = indices.length > 0
-      ? indices.map(asset => renderAssetCard(asset)).join('')
-      : '<div class="empty">暂无欧洲市场指数数据</div>';
+    stockGrid.innerHTML = stocks.length > 0
+      ? stocks.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无股票数据</div>';
   } catch (e) {
-    console.error('Europe indices error:', e);
-    grid.innerHTML = '<div class="empty">加载欧洲市场指数失败</div>';
+    console.error('Asia stocks error:', e);
+    stockGrid.innerHTML = '<div class="empty">加载失败</div>';
+  }
+
+  // 加载亚洲市场基金
+  const fundGrid = document.getElementById('asiaFundGrid');
+  fundGrid.innerHTML = '<div class="loading"><span class="spin"></span>加载基金...</div>';
+
+  try {
+    const res = await fetch(`${API}/api/search?region=亚洲市场&asset_type=fund&limit=20`);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    const funds = (data.results || []).filter(item => item.asset_type === 'fund');
+
+    fundGrid.innerHTML = funds.length > 0
+      ? funds.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无基金数据</div>';
+  } catch (e) {
+    console.error('Asia funds error:', e);
+    fundGrid.innerHTML = '<div class="empty">加载失败</div>';
   }
 }
 
-async function loadAmericasIndices() {
-  const grid = document.getElementById('americasGrid');
-  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载美洲市场指数...</div>';
+async function loadEuropeMarket() {
+  // 加载欧洲市场权重股票
+  const stockGrid = document.getElementById('europeStockGrid');
+  stockGrid.innerHTML = '<div class="loading"><span class="spin"></span>加载股票...</div>';
 
   try {
-    const res = await fetch(`${API}/api/search?region=美洲市场&asset_type=index&limit=50`);
+    const res = await fetch(`${API}/api/search?region=欧洲市场&asset_type=stock&limit=20`);
     if (!res.ok) throw new Error('API error');
     const data = await res.json();
-    const indices = (data.results || []).filter(item => item.asset_type === 'index');
+    const stocks = (data.results || []).filter(item => item.asset_type === 'stock');
 
-    console.log('Americas indices loaded:', indices.length);
-    grid.innerHTML = indices.length > 0
-      ? indices.map(asset => renderAssetCard(asset)).join('')
-      : '<div class="empty">暂无美洲市场指数数据</div>';
+    stockGrid.innerHTML = stocks.length > 0
+      ? stocks.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无股票数据</div>';
   } catch (e) {
-    console.error('Americas indices error:', e);
-    grid.innerHTML = '<div class="empty">加载美洲市场指数失败</div>';
+    console.error('Europe stocks error:', e);
+    stockGrid.innerHTML = '<div class="empty">加载失败</div>';
+  }
+
+  // 加载欧洲市场基金
+  const fundGrid = document.getElementById('europeFundGrid');
+  fundGrid.innerHTML = '<div class="loading"><span class="spin"></span>加载基金...</div>';
+
+  try {
+    const res = await fetch(`${API}/api/search?region=欧洲市场&asset_type=fund&limit=20`);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    const funds = (data.results || []).filter(item => item.asset_type === 'fund');
+
+    fundGrid.innerHTML = funds.length > 0
+      ? funds.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无基金数据</div>';
+  } catch (e) {
+    console.error('Europe funds error:', e);
+    fundGrid.innerHTML = '<div class="empty">加载失败</div>';
+  }
+}
+
+async function loadAmericasMarket() {
+  // 加载美洲市场权重股票
+  const stockGrid = document.getElementById('americasStockGrid');
+  stockGrid.innerHTML = '<div class="loading"><span class="spin"></span>加载股票...</div>';
+
+  try {
+    const res = await fetch(`${API}/api/search?region=美洲市场&asset_type=stock&limit=20`);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    const stocks = (data.results || []).filter(item => item.asset_type === 'stock');
+
+    stockGrid.innerHTML = stocks.length > 0
+      ? stocks.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无股票数据</div>';
+  } catch (e) {
+    console.error('Americas stocks error:', e);
+    stockGrid.innerHTML = '<div class="empty">加载失败</div>';
+  }
+
+  // 加载美洲市场基金
+  const fundGrid = document.getElementById('americasFundGrid');
+  fundGrid.innerHTML = '<div class="loading"><span class="spin"></span>加载基金...</div>';
+
+  try {
+    const res = await fetch(`${API}/api/search?region=美洲市场&asset_type=fund&limit=20`);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    const funds = (data.results || []).filter(item => item.asset_type === 'fund');
+
+    fundGrid.innerHTML = funds.length > 0
+      ? funds.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无基金数据</div>';
+  } catch (e) {
+    console.error('Americas funds error:', e);
+    fundGrid.innerHTML = '<div class="empty">加载失败</div>';
   }
 }
 
@@ -993,67 +1050,6 @@ function exportCSV() {
 
 function printPage() { window.print(); }
 
-// 搜索功能
-async function handleSearch(query) {
-  const suggestionsEl = document.getElementById('searchSuggestions');
-  if (!query.trim()) {
-    suggestionsEl.classList.remove('show');
-    return;
-  }
-
-  try {
-    const res = await fetch(`${API}/api/search?q=${encodeURIComponent(query)}&limit=10`);
-    if (!res.ok) throw new Error('Search API error');
-    const data = await res.json();
-    const suggestions = data.results || [];
-
-    if (suggestions.length === 0) {
-      suggestionsEl.innerHTML = '<div class="empty">无匹配结果</div>';
-    } else {
-      suggestionsEl.innerHTML = suggestions.map(s => `
-        <div class="suggestion-item" onclick="selectAsset('${s.code}')">
-          <div class="suggestion-code">${s.code}</div>
-          <div class="suggestion-name">${s.name}</div>
-          <div class="suggestion-meta">
-            <span class="suggestion-tag">${s.market}</span>
-            <span>${s.region}</span>
-            ${s.hot ? '<span class="suggestion-tag hot">热门</span>' : ''}
-          </div>
-        </div>
-      `).join('');
-    }
-    suggestionsEl.classList.add('show');
-  } catch (e) {
-    console.error('Search error:', e);
-    suggestionsEl.classList.remove('show');
-  }
-}
-
-// 事件监听
-document.getElementById('searchInput').addEventListener('input', (e) => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => handleSearch(e.target.value), 300);
-});
-
-document.getElementById('searchInput').addEventListener('blur', () => {
-  setTimeout(() => document.getElementById('searchSuggestions').classList.remove('show'), 200);
-});
-
-// 市场标签切换
-document.querySelectorAll('.market-tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.market-tab').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-
-    const market = btn.dataset.market;
-    document.querySelectorAll('.market-content').forEach(content => content.classList.remove('active'));
-    const targetContent = document.getElementById(market + 'Content');
-    if (targetContent) {
-      targetContent.classList.add('active');
-    }
-  });
-});
-
 // 兼容旧的region-tab监听器（如果存在）
 document.querySelectorAll('.region-tab').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1074,7 +1070,27 @@ document.getElementById('updateTime').textContent = new Date().toLocaleString('z
 
 // 初始化页面
 async function initPage() {
-  await loadMarketIndices();
+  // 设置市场标签点击事件
+  const marketTabs = document.querySelectorAll('.market-tab');
+  marketTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      marketTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+
+      const market = tab.dataset.market;
+      document.querySelectorAll('.market-content').forEach(content => {
+        content.classList.remove('active');
+      });
+      document.getElementById(`${market}Content`).classList.add('active');
+
+      // 加载对应市场的数据
+      loadMarketData();
+    });
+  });
+
+  // 加载默认市场数据（欧洲市场）
+  await loadMarketData();
+
   // 初始化选中默认代码
   if (state.selectedCode) {
     await refreshSelectedCode();
