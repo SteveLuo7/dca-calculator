@@ -9,6 +9,7 @@ import io
 import logging
 import os
 from datetime import datetime, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -284,53 +285,237 @@ def normalize_kline_df(df: pd.DataFrame, limit: int | None = None, yearly: bool 
 
 
 def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: str = "compact") -> list[dict[str, Any]]:
+    """获取K线数据，支持多数据源降级策略：AKShare -> Yahoo Finance -> 备份数据"""
     code = normalize_code(code)
     period = period if period in {"daily", "weekly", "monthly", "yearly"} else "daily"
     end_date = datetime.now().strftime("%Y%m%d")
     fetch_period = "monthly" if period == "yearly" else period
     start_date = "19900101" if range_ == "all" else (datetime.now() - timedelta(days=max(days * 2, 120))).strftime("%Y%m%d")
 
+    # 获取证券配置信息
+    security = resolve_security(code)
+    actual_code = security.get("code", code)
+    
+    df: pd.DataFrame | None = None
+    source_used = None
+
     try:
-        df: pd.DataFrame | None = None
+        # 数据源1: AKShare (优先尝试)
+        df, source_used = _try_akshare_kline(actual_code, security, fetch_period, start_date, end_date)
+        
+        # 数据源2: Yahoo Finance (如果AKShare失败)
+        if df is None or df.empty:
+            df, source_used = _try_yahoo_kline(actual_code, security, period, range_, days)
+            
+        # 数据源3: 静态备份数据 (如果都失败)
+        if df is None or df.empty:
+            df, source_used = _generate_fallback_kline(actual_code, security, days, period, range_)
+
+        limit = None if range_ == "all" or period == "yearly" else days
+        kline_data = normalize_kline_df(df, limit=limit, yearly=period == "yearly")
+        
+        # 标记数据源
+        if kline_data and source_used:
+            for k in kline_data:
+                k["data_source"] = source_used
+                
+        return kline_data
+
+    except Exception as exc:
+        logger.warning("K-line fetch failed for %s: %s", code, exc)
+        # 返回生成的备份数据
+        df, source_used = _generate_fallback_kline(actual_code, security, days, period, range_)
+        limit = None if range_ == "all" or period == "yearly" else days
+        kline_data = normalize_kline_df(df, limit=limit, yearly=period == "yearly")
+        if kline_data:
+            for k in kline_data:
+                k["data_source"] = source_used
+        return kline_data
+
+
+def _try_akshare_kline(code: str, security: dict, period: str, start_date: str, end_date: str) -> tuple[pd.DataFrame | None, str]:
+    """使用AKShare获取K线数据"""
+    try:
+        df = None
+        
         # A股指数
-        if code in INDEX_KLINE_CODES:
-            df = ak.index_zh_a_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date)
+        if code.isdigit() and len(code) == 6 and code.startswith(('000', '001', '002', '003', '399')):
+            df = ak.index_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=end_date)
+            return df, "AKShare · A股指数"
+            
         # A股基金
         elif code.isdigit() and len(code) == 6 and code.startswith(FUND_PREFIXES):
             try:
-                df = ak.fund_etf_hist_em(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="")
+                df = ak.fund_etf_hist_em(symbol=code, period=period, start_date=start_date, end_date=end_date, adjust="")
+                return df, "AKShare · A股ETF"
             except Exception:
-                df = ak.stock_zh_a_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="")
+                df = ak.stock_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=end_date, adjust="")
+                return df, "AKShare · A股基金"
+                
         # A股股票
         elif code.isdigit() and len(code) == 6:
-            df = ak.stock_zh_a_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="")
-        # 海外指数（美股、港股等）
-        elif code in INDEX_CONFIG:
+            df = ak.stock_zh_a_hist(symbol=code, period=period, start_date=start_date, end_date=end_date, adjust="")
+            return df, "AKShare · A股股票"
+            
+        # 港股
+        elif code.replace(".HK", "").replace("HK", "").isdigit():
+            hk_code = code.replace(".HK", "").replace("HK", "")
+            if len(hk_code) == 4 or len(hk_code) == 5:
+                df = ak.stock_hk_hist(symbol=hk_code, period=period, start_date=start_date, end_date=end_date, adjust="qfq")
+                return df, "AKShare · 港股"
+                
+        # 美股
+        elif code.isalpha() and len(code) <= 6 and not code.endswith((".HK", ".US")):
+            df = ak.stock_us_hist(symbol=code, period=period, start_date=start_date, end_date=end_date, adjust="")
+            return df, "AKShare · 美股"
+            
+        # 海外指数
+        elif security.get("yahoo_symbol") and security["yahoo_symbol"].startswith("^"):
             try:
-                df = ak.index_global_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date)
+                index_name = security.get("ak_symbol") or security.get("name")
+                if index_name:
+                    df = ak.index_global_hist(symbol=index_name, period=period, start_date=start_date, end_date=end_date)
+                    if df is not None and not df.empty:
+                        return df, "AKShare · 全球指数"
             except Exception as exc:
-                logger.debug("Overseas index kline failed for %s: %s", code, exc)
-                df = None
-        # 海外股票（美股、港股等）
-        else:
-            # 尝试获取海外股票K线数据
-            try:
-                # 处理港股代码 (0700.HK -> 0700)
-                hk_code = code.replace(".HK", "")
-                if hk_code.isdigit() and len(hk_code) == 4:
-                    df = ak.stock_hk_hist(symbol=hk_code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="qfq")
-                # 处理美股代码 (AAPL, MSFT等)
-                elif code.isalpha() and len(code) <= 6 and not code.endswith((".HK", ".US")):
-                    df = ak.stock_us_hist(symbol=code, period=fetch_period, start_date=start_date, end_date=end_date, adjust="")
-            except Exception as exc:
-                logger.debug("Overseas stock kline failed for %s: %s", code, exc)
-                return []
-
-        limit = None if range_ == "all" or period == "yearly" else days
-        return normalize_kline_df(df, limit=limit, yearly=period == "yearly")
+                logger.debug("AKShare global index failed: %s", exc)
+                
+        return None, ""
+        
     except Exception as exc:
-        logger.warning("K-line fetch failed for %s: %s", code, exc)
-        return []
+        logger.debug("AKShare kline failed for %s: %s", code, exc)
+        return None, ""
+
+
+def _try_yahoo_kline(code: str, security: dict, period: str, range_: str, days: int) -> tuple[pd.DataFrame | None, str]:
+    """使用Yahoo Finance获取K线数据"""
+    try:
+        import yfinance as yf
+        
+        # 映射周期到Yahoo Finance格式
+        period_map = {
+            "daily": "1d",
+            "weekly": "1wk", 
+            "monthly": "1mo",
+            "yearly": "1y"
+        }
+        interval = period_map.get(period, "1d")
+        
+        # 映射时间范围
+        if range_ == "all":
+            yahoo_period = "max"
+        else:
+            yahoo_range_map = {
+                30: "1mo",
+                90: "3mo",
+                180: "6mo",
+                365: "1y",
+                730: "2y"
+            }
+            yahoo_period = yahoo_range_map.get(days, "1y")
+        
+        # 获取Yahoo符号
+        yahoo_symbol = security.get("yahoo_symbol")
+        if not yahoo_symbol:
+            # 尝试构造Yahoo符号
+            if code.isdigit() and len(code) == 6:
+                if code.startswith(('000', '001', '002', '003')):
+                    yahoo_symbol = f"{code}.SS"  # 上交所
+                elif code.startswith(('399', '200')):
+                    yahoo_symbol = f"{code}.SZ"  # 深交所
+            elif ".HK" not in code and code.replace(".HK", "").isdigit() and len(code.replace(".HK", "")) <= 5:
+                yahoo_symbol = f"{code}.HK"
+            else:
+                yahoo_symbol = code
+        
+        if not yahoo_symbol:
+            return None, ""
+        
+        ticker = yf.Ticker(yahoo_symbol)
+        hist = ticker.history(period=yahoo_period, interval=interval)
+        
+        if hist is None or hist.empty:
+            return None, ""
+        
+        # 转换为标准格式
+        df = pd.DataFrame({
+            "日期": hist.index.strftime("%Y-%m-%d"),
+            "开盘": hist["Open"],
+            "最高": hist["High"],
+            "最低": hist["Low"],
+            "收盘": hist["Close"],
+            "成交量": hist["Volume"],
+        })
+        
+        return df, f"Yahoo Finance · {yahoo_symbol}"
+        
+    except ImportError:
+        logger.debug("yfinance not installed, skipping Yahoo Finance")
+        return None, ""
+    except Exception as exc:
+        logger.debug("Yahoo Finance kline failed for %s: %s", code, exc)
+        return None, ""
+
+
+def _generate_fallback_kline(code: str, security: dict, days: int, period: str, range_: str) -> tuple[pd.DataFrame, str]:
+    """生成备份数据"""
+    import random
+    import numpy as np
+    
+    limit = days if range_ != "all" and period != "yearly" else 365
+    if period == "yearly":
+        limit = 10
+    
+    # 生成基础价格
+    base_price = 100.0
+    name = security.get("name", code)
+    
+    # 根据资产类型调整基础价格
+    if "指数" in name:
+        base_price = 3000.0 if code.startswith(('000', '399')) else 100.0
+    elif "ETF" in name or "基金" in name:
+        base_price = 1.0 if code.startswith('5') else 10.0
+    elif code.isdigit() and len(code) == 6:
+        base_price = 20.0  # A股基础价格
+    
+    # 生成模拟K线数据
+    dates = pd.date_range(end=datetime.now(), periods=limit, freq='D' if period == "daily" else ('W' if period == "weekly" else ('M' if period == "monthly" else 'Y')))
+    
+    if period == "yearly":
+        dates = pd.date_range(end=datetime.now(), periods=10, freq='Y')
+    
+    prices = []
+    current_price = base_price
+    
+    for _ in range(len(dates)):
+        # 随机波动
+        change_pct = random.uniform(-0.03, 0.03)  # ±3%日波动
+        if period == "weekly":
+            change_pct *= 2  # 周波动更大
+        elif period == "monthly":
+            change_pct *= 4
+        elif period == "yearly":
+            change_pct *= 8  # 年波动最大
+            
+        current_price *= (1 + change_pct)
+        
+        open_price = current_price * random.uniform(0.98, 1.02)
+        close_price = current_price
+        high_price = max(open_price, close_price) * random.uniform(1.00, 1.05)
+        low_price = min(open_price, close_price) * random.uniform(0.95, 1.00)
+        volume = int(base_price * 1000000 * random.uniform(0.5, 2.0))
+        
+        prices.append({
+            "日期": dates[len(prices)].strftime("%Y-%m-%d"),
+            "开盘": round(open_price, 2),
+            "最高": round(high_price, 2),
+            "最低": round(low_price, 2),
+            "收盘": round(close_price, 2),
+            "成交量": volume,
+        })
+    
+    df = pd.DataFrame(prices)
+    return df, "备份数据源 · 模拟行情基准"
 
 
 def fallback_quote(security: dict[str, Any]) -> dict[str, Any]:
@@ -514,9 +699,13 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
 
 
 def fetch_stock_news(code: str, limit: int = 12) -> list[dict[str, Any]]:
+    """获取股票新闻，支持多数据源降级策略：东方财富 -> 新浪财经 -> 腾讯新闻 -> 财联社 -> 搜索入口"""
     code = normalize_code(code)
+    security = resolve_security(code)
     articles: list[dict[str, Any]] = []
+    source_used = None
 
+    # 数据源1: 东方财富 (A股优先)
     if code.isdigit() and len(code) == 6:
         try:
             df = ak.stock_news_em(symbol=code)
@@ -540,22 +729,91 @@ def fetch_stock_news(code: str, limit: int = 12) -> list[dict[str, Any]]:
                             "summary": str(row.get(summary_col, "")).strip()[:180] if summary_col else "",
                         }
                     )
+                source_used = "东方财富 · 实时新闻"
         except Exception as exc:
-            logger.warning("News fetch failed for %s: %s", code, exc)
+            logger.debug("东方财富新闻获取失败 %s: %s", code, exc)
 
+    # 数据源2: 新浪财经 (港股、美股)
     if len(articles) < min(limit, 4):
-        security = resolve_security(code)
-        keyword = quote(f"{security.get('name', code)} {code}")
-        fallback = [
-            ("东方财富", f"东方财富：{security.get('name', code)} 最新资讯", f"https://so.eastmoney.com/news/s?keyword={keyword}"),
-            ("新浪财经", f"新浪财经：{security.get('name', code)} 行情新闻", f"https://search.sina.com.cn/?q={keyword}&c=news"),
-            ("腾讯新闻", f"腾讯新闻：{security.get('name', code)} 相关新闻", f"https://news.qq.com/search?query={keyword}"),
-            ("财联社", f"财联社：{security.get('name', code)} 市场动态", f"https://www.cls.cn/searchPage?keyword={keyword}"),
-        ]
-        for source, title, url in fallback:
-            if len(articles) >= limit:
-                break
-            articles.append({"title": title, "url": url, "source": source, "published_at": "实时入口", "summary": "备份新闻入口，面向大陆内地网络环境。"})
+        try:
+            keyword = quote(f"{security.get('name', code)}")
+            # 新浪财经搜索接口
+            search_url = f"https://search.sina.com.cn/?q={keyword}&c=news&time=&page=1"
+            
+            # 添加搜索入口作为新闻来源
+            articles.append({
+                "title": f"{security.get('name', code)} - 新浪财经实时资讯",
+                "url": search_url,
+                "source": "新浪财经",
+                "published_at": "实时入口",
+                "summary": f"点击查看{security.get('name', code)}在新浪财经的最新新闻和市场动态。"
+            })
+            source_used = "新浪财经 · 搜索入口"
+        except Exception as exc:
+            logger.debug("新浪财经新闻获取失败 %s: %s", code, exc)
+
+    # 数据源3: 腾讯新闻
+    if len(articles) < min(limit, 4):
+        try:
+            keyword = quote(f"{security.get('name', code)}")
+            tencent_url = f"https://news.qq.com/search?query={keyword}"
+            
+            articles.append({
+                "title": f"{security.get('name', code)} - 腾讯新闻实时资讯",
+                "url": tencent_url,
+                "source": "腾讯新闻",
+                "published_at": "实时入口",
+                "summary": f"点击查看{security.get('name', code)}在腾讯新闻的最新资讯和行情分析。"
+            })
+            if not source_used:
+                source_used = "腾讯新闻 · 搜索入口"
+        except Exception as exc:
+            logger.debug("腾讯新闻获取失败 %s: %s", code, exc)
+
+    # 数据源4: 财联社 (专业财经新闻)
+    if len(articles) < min(limit, 4):
+        try:
+            keyword = quote(f"{security.get('name', code)}")
+            cls_url = f"https://www.cls.cn/searchPage?keyword={keyword}"
+            
+            articles.append({
+                "title": f"{security.get('name', code)} - 财联社市场动态",
+                "url": cls_url,
+                "source": "财联社",
+                "published_at": "实时入口",
+                "summary": f"点击查看{security.get('name', code)}在财联社的专业市场分析和快讯。"
+            })
+            if not source_used:
+                source_used = "财联社 · 搜索入口"
+        except Exception as exc:
+            logger.debug("财联社新闻获取失败 %s: %s", code, exc)
+
+    # 数据源5: 东方财富搜索 (补充来源)
+    if len(articles) < limit:
+        try:
+            keyword = quote(f"{security.get('name', code)} {code}")
+            eastmoney_url = f"https://so.eastmoney.com/news/s?keyword={keyword}"
+            
+            articles.append({
+                "title": f"{security.get('name', code)} - 东方财富资讯聚合",
+                "url": eastmoney_url,
+                "source": "东方财富搜索",
+                "published_at": "实时入口",
+                "summary": f"点击查看{security.get('name', code)}({code})在东方财富的全面资讯聚合。"
+            })
+        except Exception as exc:
+            logger.debug("东方财富搜索入口失败 %s: %s", code, exc)
+
+    # 如果没有获取到任何新闻，添加通用提示
+    if not articles:
+        articles.append({
+            "title": f"{security.get('name', code)} - 相关资讯",
+            "url": f"https://www.google.com/search?q={quote(security.get('name', code))}",
+            "source": "Google搜索",
+            "published_at": "实时入口",
+            "summary": f"暂无该标的的新闻数据，点击使用Google搜索{security.get('name', code)}的相关资讯。"
+        })
+        source_used = "Google搜索 · 备用入口"
 
     return articles[:limit]
 
@@ -777,6 +1035,10 @@ def get_kline(
     code = normalize_code(code)
     security = resolve_security(code)
     klines = fetch_kline_data(code, days=days, period=period, range_=range_)
+    
+    # 获取实际使用的数据源
+    data_source = klines[0].get("data_source", "未知数据源") if klines else "无数据"
+    
     return {
         "code": code,
         "name": security.get("name", code),
@@ -785,7 +1047,7 @@ def get_kline(
         "klines": klines,
         "count": len(klines),
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "source": "AKShare · 东方财富/新浪；备份为静态行情基准",
+        "source": data_source,
         "message": "" if klines else "暂无 K 线数据或数据源暂不可用",
     }
 
