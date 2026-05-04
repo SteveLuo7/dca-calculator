@@ -13,7 +13,8 @@
 - **30 年收益明细**：逐年展示累计投入、组合价值、收益额、总收益率、年化回报
 - **图表分析**：支持收益曲线、PE 历史走势、K 线行情和成交量图（支持日K/周K/月K/年K、近一年/历史至今）
 - **相关新闻**：优先使用大陆可访问的直接新闻源（东方财富、财联社、同花顺），确保用户可以直接访问
-- **K线数据**：优先使用大陆可访问的AKShare数据源，Yahoo Finance仅作为海外市场的辅助数据源
+- **统一数据源**：总览价格和K线图使用同一数据源（AKShare国内数据源），确保数据一致性
+- **货币单位标注**：所有价格显示均标注货币单位（CNY人民币、HKD港币、USD美元等）
 - **多格式导出**：支持 Excel、CSV、打印 / PDF
 - **全球市场支持**：支持 A 股、港股、美股等全球市场指数和股票的实时行情与K线数据
 
@@ -150,29 +151,31 @@ curl "http://localhost:8000/api/export/excel?code=000300&name=沪深300&pe=13&mo
    - 替代了原有的Google搜索
    - ✅ 大陆可直接访问
 
-### K线数据源（AKShare为主，Yahoo为辅）
+### K线数据源（统一使用AKShare国内数据源）
 
-K线数据源按以下优先级配置：
+K线数据使用AKShare国内数据源，确保数据一致性和大陆可访问性：
 
-1. **AKShare** - 主要数据源（大陆优先）
-   - A股指数: `ak.index_zh_a_hist()`
-   - A股股票: `ak.stock_zh_a_hist()`
-   - A股ETF: `ak.fund_etf_hist_em()`
-   - 港股: `ak.stock_hk_hist()`
-   - 美股: `ak.stock_us_hist()`
-   - 全球指数: `ak.index_global_hist()`
-   - ✅ 大陆可直接访问
+**数据源配置：**
+- A股指数: `ak.index_zh_a_hist()`
+- A股股票: `ak.stock_zh_a_hist()`
+- A股ETF: `ak.fund_etf_hist_em()`
+- 港股: `ak.stock_hk_hist()`
+- 美股: `ak.stock_us_spot_em()` + `ak.stock_us_hist()`
+- 全球指数: `ak.index_global_spot()` + `ak.index_global_hist()`
+- ✅ 全部为大陆可访问的数据源
 
-2. **Yahoo Finance** - 海外市场辅助数据源
-   - 仅在AKShare失败时使用
-   - 使用 `yfinance` 库
-   - ⚠️ 可能需要网络代理才能访问
+**总览价格与K线图数据源统一：**
+- 总览价格（实时行情）和K线图使用同一数据源：AKShare
+- 实时行情通过 `fetch_quote_data()` 获取，失败时从K线最新数据补充
+- 确保总览价格和K线图数据完全一致
 
-3. **备份数据源** - 模拟数据
-   - 最后兜底方案
-   - 确保系统可用性
+**货币单位标注：**
+- A股（上海/深圳/创业板）：CNY（人民币）
+- 港股：HKD（港币）
+- 美股：USD（美元）
+- 其他市场根据市场类型自动标注
 
-**数据源标注**：每个K线数据点都包含 `data_source` 字段，明确标识数据来源。
+**数据源标注**：每个K线数据点和报价数据都包含 `data_source` 和 `currency` 字段，明确标识数据来源和货币单位。
 
 ---
 

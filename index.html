@@ -264,10 +264,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
-<script>
+  <script>
 const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
   ? 'http://localhost:8000'
   : 'https://dca-calculator-production.up.railway.app';
+
+const CURRENCY_SYMBOLS = {
+  'CNY': '¥',
+  'HKD': 'HK$',
+  'USD': '$',
+  'EUR': '€',
+  'GBP': '£'
+};
 
 const PRESETS = [
   { code:'000300', name:'沪深300', market:'A股', default_pe:13, earnings_growth:6 },
@@ -292,6 +300,7 @@ let state = {
   calcResult: null,
   tableMode: 'base',
   chartMode: 'kline',
+  currentCurrency: 'CNY',
 };
 let chartInst = null;
 let klineChart = null;
@@ -350,6 +359,7 @@ async function refreshSelectedCode() {
   const code = state.selectedCode;
   await Promise.all([fetchPE(code), fetchNews(code)]);
   if (state.chartMode === 'kline') loadKline();
+  await fetchQuote(code);
 }
 
 async function fetchPE(code) {
@@ -369,6 +379,17 @@ async function fetchPE(code) {
     renderPEBlock(state.peData);
     toast('无法获取 PE，已使用默认值');
     return state.peData;
+  }
+}
+
+async function fetchQuote(code) {
+  try {
+    const res = await fetch(`${API}/api/quote/${encodeURIComponent(code)}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    state.currentCurrency = data.currency || 'CNY';
+  } catch (e) {
+    state.currentCurrency = 'CNY';
   }
 }
 
@@ -566,6 +587,9 @@ async function loadKline(days = 120, btn = null) {
     if (!res.ok) throw new Error('K-line API error');
     const data = await res.json();
     state.klineData = data.klines || [];
+    if (state.klineData.length > 0) {
+      state.currentCurrency = state.klineData[0].currency || 'CNY';
+    }
     document.getElementById('klineTitle').textContent = `${data.name || state.selectedCode} 行情`;
     renderKlineChart(state.klineData);
   } catch (e) {
@@ -585,10 +609,12 @@ function renderKlineChart(rows) {
   const latest = rows[rows.length - 1];
   const prev = rows.length > 1 ? rows[rows.length - 2] : latest;
   const chg = latest.close - prev.close;
+  const currencySymbol = CURRENCY_SYMBOLS[state.currentCurrency] || '';
   legend.innerHTML = `
-    <span class="leg"><span class="leg-dot" style="background:${chg >= 0 ? '#f06060' : '#2ecc96'}"></span>收盘 ${latest.close.toFixed(2)}</span>
+    <span class="leg"><span class="leg-dot" style="background:${chg >= 0 ? '#f06060' : '#2ecc96'}"></span>收盘 ${currencySymbol}${latest.close.toFixed(2)}</span>
     <span class="leg">${latest.time}</span>
-    <span class="leg" style="color:${chg >= 0 ? '#f06060' : '#2ecc96'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}</span>`;
+    <span class="leg" style="color:${chg >= 0 ? '#f06060' : '#2ecc96'}">${chg >= 0 ? '+' : ''}${currencySymbol}${chg.toFixed(2)}</span>
+    <span class="leg" style="color:#5d667d">${state.currentCurrency}</span>`;
 
   const upColor = '#f06060';
   const downColor = '#2ecc96';

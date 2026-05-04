@@ -285,7 +285,7 @@ def normalize_kline_df(df: pd.DataFrame, limit: int | None = None, yearly: bool 
 
 
 def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: str = "compact") -> list[dict[str, Any]]:
-    """获取K线数据，支持多数据源降级策略：AKShare（大陆优先）-> Yahoo Finance（海外辅助）-> 备份数据"""
+    """获取K线数据，使用AKShare国内数据源"""
     code = normalize_code(code)
     period = period if period in {"daily", "weekly", "monthly", "yearly"} else "daily"
     end_date = datetime.now().strftime("%Y%m%d")
@@ -295,30 +295,28 @@ def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: 
     # 获取证券配置信息
     security = resolve_security(code)
     actual_code = security.get("code", code)
-    
+
     df: pd.DataFrame | None = None
     source_used = None
 
     try:
-        # 数据源1: AKShare（大陆可访问，优先尝试）
+        # 使用AKShare获取K线数据（国内数据源）
         df, source_used = _try_akshare_kline(actual_code, security, fetch_period, start_date, end_date)
-        
-        # 数据源2: Yahoo Finance（仅在AKShare失败时使用，海外辅助）
-        if df is None or df.empty:
-            df, source_used = _try_yahoo_kline(actual_code, security, period, range_, days)
-            
-        # 数据源3: 静态备份数据（最后兜底）
+
+        # 静态备份数据（兜底）
         if df is None or df.empty:
             df, source_used = _generate_fallback_kline(actual_code, security, days, period, range_)
 
         limit = None if range_ == "all" or period == "yearly" else days
         kline_data = normalize_kline_df(df, limit=limit, yearly=period == "yearly")
-        
-        # 标记数据源
+
+        # 标记数据源和货币单位
+        currency = _get_currency_from_security(security)
         if kline_data and source_used:
             for k in kline_data:
                 k["data_source"] = source_used
-                
+                k["currency"] = currency
+
         return kline_data
 
     except Exception as exc:
@@ -327,9 +325,11 @@ def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: 
         df, source_used = _generate_fallback_kline(actual_code, security, days, period, range_)
         limit = None if range_ == "all" or period == "yearly" else days
         kline_data = normalize_kline_df(df, limit=limit, yearly=period == "yearly")
+        currency = _get_currency_from_security(security)
         if kline_data:
             for k in kline_data:
                 k["data_source"] = source_used
+                k["currency"] = currency
         return kline_data
 
 
@@ -387,74 +387,23 @@ def _try_akshare_kline(code: str, security: dict, period: str, start_date: str, 
         return None, ""
 
 
-def _try_yahoo_kline(code: str, security: dict, period: str, range_: str, days: int) -> tuple[pd.DataFrame | None, str]:
-    """使用Yahoo Finance获取K线数据"""
-    try:
-        import yfinance as yf
-        
-        # 映射周期到Yahoo Finance格式
-        period_map = {
-            "daily": "1d",
-            "weekly": "1wk", 
-            "monthly": "1mo",
-            "yearly": "1y"
-        }
-        interval = period_map.get(period, "1d")
-        
-        # 映射时间范围
-        if range_ == "all":
-            yahoo_period = "max"
-        else:
-            yahoo_range_map = {
-                30: "1mo",
-                90: "3mo",
-                180: "6mo",
-                365: "1y",
-                730: "2y"
-            }
-            yahoo_period = yahoo_range_map.get(days, "1y")
-        
-        # 获取Yahoo符号
-        yahoo_symbol = security.get("yahoo_symbol")
-        if not yahoo_symbol:
-            # 尝试构造Yahoo符号
-            if code.isdigit() and len(code) == 6:
-                if code.startswith(('000', '001', '002', '003')):
-                    yahoo_symbol = f"{code}.SS"  # 上交所
-                elif code.startswith(('399', '200')):
-                    yahoo_symbol = f"{code}.SZ"  # 深交所
-            elif ".HK" not in code and code.replace(".HK", "").isdigit() and len(code.replace(".HK", "")) <= 5:
-                yahoo_symbol = f"{code}.HK"
-            else:
-                yahoo_symbol = code
-        
-        if not yahoo_symbol:
-            return None, ""
-        
-        ticker = yf.Ticker(yahoo_symbol)
-        hist = ticker.history(period=yahoo_period, interval=interval)
-        
-        if hist is None or hist.empty:
-            return None, ""
-        
-        # 转换为标准格式
-        df = pd.DataFrame({
-            "日期": hist.index.strftime("%Y-%m-%d"),
-            "开盘": hist["Open"],
-            "最高": hist["High"],
-            "最低": hist["Low"],
-            "收盘": hist["Close"],
-            "成交量": hist["Volume"],
-        })
-        
-        return df, f"Yahoo Finance · {yahoo_symbol}"
-        
-    except ImportError:
-        logger.debug("yfinance not installed, skipping Yahoo Finance")
-        return None, ""
-    except Exception as exc:
-        logger.debug("Yahoo Finance kline failed for %s: %s", code, exc)
-        return None, ""
+def _get_currency_from_security(security: dict[str, Any]) -> str:
+    """根据证券信息获取货币单位"""
+    market = security.get("market", "").lower()
+    code = security.get("code", "")
+
+    # A股：人民币
+    if code.isdigit() and len(code) == 6:
+        return "CNY"
+    # 港股：港币
+    elif "港" in market or code.endswith(".HK"):
+        return "HKD"
+    # 美股：美元
+    elif "美" in market or code.isalpha():
+        return "USD"
+    # 默认：人民币
+    else:
+        return "CNY"
 
 
 def _generate_fallback_kline(code: str, security: dict, days: int, period: str, range_: str) -> tuple[pd.DataFrame, str]:
@@ -526,6 +475,9 @@ def fallback_quote(security: dict[str, Any]) -> dict[str, Any]:
     if price is not None:
         prev = price / (1 + change_pct / 100) if change_pct != -100 else price
         change = price - prev
+
+    currency = _get_currency_from_security(security)
+
     return {
         "code": security["code"],
         "name": security.get("name", security["code"]),
@@ -535,6 +487,7 @@ def fallback_quote(security: dict[str, Any]) -> dict[str, Any]:
         "previous_close": round(prev, 4) if prev is not None else None,
         "change": round(change, 4) if change is not None else None,
         "change_pct": round(change_pct, 2) if price is not None else None,
+        "currency": currency,
         "source": "备份数据源 · 静态行情基准" if price is not None else "暂无实时行情（可继续估值/定投测算）",
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
     }
@@ -543,7 +496,10 @@ def fallback_quote(security: dict[str, Any]) -> dict[str, Any]:
 def fetch_quote_data(code: str) -> dict[str, Any]:
     security = resolve_security(code)
     code = security["code"]
-    
+
+    # 获取货币单位
+    currency = _get_currency_from_security(security)
+
     # 尝试获取实时行情数据
     try:
         # A股行情
@@ -572,6 +528,7 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
                                 "previous_close": round(price - change, 4) if change else None,
                                 "change": round(change, 4),
                                 "change_pct": round(change_pct, 2),
+                                "currency": currency,
                                 "source": "AKShare · 东方财富实时行情",
                                 "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                             }
@@ -601,6 +558,7 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
                                     "previous_close": round(price - change, 4) if change else None,
                                     "change": round(change, 4),
                                     "change_pct": round(change_pct, 2),
+                                    "currency": currency,
                                     "source": "AKShare · 全球指数实时行情",
                                     "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 }
@@ -634,6 +592,7 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
                                     "previous_close": round(price - change, 4) if change else None,
                                     "change": round(change, 4),
                                     "change_pct": round(change_pct, 2),
+                                    "currency": currency,
                                     "source": "AKShare · 港股实时行情",
                                     "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 }
@@ -666,6 +625,7 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
                                     "previous_close": round(price - change, 4) if change else None,
                                     "change": round(change, 4),
                                     "change_pct": round(change_pct, 2),
+                                    "currency": currency,
                                     "source": "AKShare · 美股实时行情",
                                     "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                                 }
@@ -674,7 +634,7 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
     except Exception as exc:
         logger.debug("Quote fetch failed for %s: %s", code, exc)
 
-    # 如果实时行情获取失败，从K线数据获取最新价格
+    # 如果实时行情获取失败，从K线数据获取最新价格（与K线图数据源一致）
     rows = fetch_kline_data(code, days=8, period="daily")
     if len(rows) >= 1:
         latest = rows[-1]
@@ -692,7 +652,8 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
             "previous_close": round(previous_close, 4),
             "change": round(change, 4),
             "change_pct": round(change_pct, 2),
-            "source": "AKShare · K线最新价（实时行情暂不可用）",
+            "currency": currency,
+            "source": "AKShare · K线最新价（与K线图数据源一致）",
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
     return fallback_quote(security)
