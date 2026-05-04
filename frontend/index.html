@@ -69,30 +69,23 @@
   .suggestion-tag.hot { background: rgba(245,166,35,.12); color: var(--amber); }
 
   /* 搜索模块特殊样式 */
-  .panel.search-module { border: 1px solid var(--accent); box-shadow: 0 0 20px rgba(79,142,247,0.1); }
+  .panel.search-module { border: 1px solid var(--accent); box-shadow: 0 0 20px rgba(79,142,247,0.15); }
   .panel.search-module .panel-title { color: var(--accent); }
 
   /* 市场标签页 */
   .market-tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
-  .market-tab { border: 1px solid var(--border); background: transparent; color: var(--text2); border-radius: 6px; padding: 6px 18px; font-size: 12px; cursor: pointer; transition: .15s; flex: 1; text-align: center; }
+  .market-tab { border: 1px solid var(--border); background: transparent; color: var(--text2); border-radius: 6px; padding: 8px 16px; font-size: 12px; cursor: pointer; transition: .15s; flex: 1; text-align: center; }
   .market-tab:hover { border-color: var(--border2); color: var(--text); }
-  .market-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .market-tab.active { background: var(--green); color: #fff; border-color: var(--green); }
 
   /* 市场内容区域 */
-  .market-content { display: none; padding: 8px 0; }
+  .market-content { display: none; }
   .market-content.active { display: block; }
 
-  /* 市场头部样式 */
-  .market-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: var(--bg3); border-radius: 6px; margin-bottom: 10px; border: 1px solid var(--border); }
-  .market-emoji { font-size: 18px; }
-  .market-name { flex: 1; font-size: 13px; font-weight: 500; color: var(--text); }
-  .market-count { font-size: 11px; color: var(--text3); font-family: var(--mono); background: var(--bg2); padding: 2px 8px; border-radius: 4px; }
-
   /* 市场指数模块特殊样式 */
-  .panel.market-module { border: 1px solid var(--green); box-shadow: 0 0 20px rgba(46,204,150,0.1); }
+  .panel.market-module { border: 1px solid var(--green); box-shadow: 0 0 20px rgba(46,204,150,0.15); }
   .panel.market-module .panel-title { color: var(--green); }
-  .panel.market-module .market-tabs { border-color: var(--green); }
-  .panel.market-module .market-tab.active { background: var(--green); border-color: var(--green); }
+  .panel.market-module .market-tabs { border-color: rgba(46,204,150,0.3); }
 
   /* 区域标签页（旧样式，保留兼容） */
   .region-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -215,9 +208,9 @@
 
   <div class="main-grid">
     <div class="left-col">
-      <!-- 搜索模块 - 独立模块 -->
-      <section class="panel search-module">
-        <div class="panel-title">🔍 搜索标的</div>
+      <!-- 搜索模块 - 完全独立 -->
+      <section class="panel search-module" style="margin-bottom: 20px;">
+        <div class="panel-title">🔍 全局搜索</div>
         <div class="search-container">
           <span class="search-icon">📋</span>
           <input id="searchInput" class="search-input" type="text" placeholder="输入代码、名称或公司进行搜索..." />
@@ -225,9 +218,9 @@
         </div>
       </section>
 
-      <!-- 市场指数选择模块 - 三个独立市场 -->
-      <section class="panel market-module">
-        <div class="panel-title">🌍 选择市场指数</div>
+      <!-- 市场指数选择模块 - 完全独立 -->
+      <section class="panel market-module" style="margin-bottom: 20px;">
+        <div class="panel-title">🌍 市场指数（按地区分类）</div>
 
         <!-- 市场标签页 -->
         <div class="market-tabs" id="marketTabs">
@@ -238,31 +231,16 @@
 
         <!-- 亚洲市场指数 -->
         <div class="market-content active" id="asiaContent">
-          <div class="market-header">
-            <span class="market-emoji">🏯</span>
-            <span class="market-name">亚洲市场</span>
-            <span class="market-count" id="asiaCount">加载中...</span>
-          </div>
           <div class="asset-grid" id="asiaGrid"></div>
         </div>
 
         <!-- 欧洲市场指数 -->
         <div class="market-content" id="europeContent">
-          <div class="market-header">
-            <span class="market-emoji">🏰</span>
-            <span class="market-name">欧洲市场</span>
-            <span class="market-count" id="europeCount">加载中...</span>
-          </div>
           <div class="asset-grid" id="europeGrid"></div>
         </div>
 
         <!-- 美洲市场指数 -->
         <div class="market-content" id="americasContent">
-          <div class="market-header">
-            <span class="market-emoji">🗽</span>
-            <span class="market-name">美洲市场</span>
-            <span class="market-count" id="americasCount">加载中...</span>
-          </div>
           <div class="asset-grid" id="americasGrid"></div>
         </div>
       </section>
@@ -470,73 +448,61 @@ async function loadMarketIndices() {
 
 async function loadAsiaIndices() {
   const grid = document.getElementById('asiaGrid');
-  const countEl = document.getElementById('asiaCount');
-  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
-  countEl.textContent = '加载中...';
+  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载亚洲市场指数...</div>';
 
   try {
-    const res = await fetch(`${API}/api/search?region=亚洲市场&asset_type=index&limit=30`);
+    const res = await fetch(`${API}/api/search?region=亚洲市场&asset_type=index&limit=50`);
     if (!res.ok) throw new Error('API error');
     const data = await res.json();
     const indices = (data.results || []).filter(item => item.asset_type === 'index');
 
     console.log('Asia indices loaded:', indices.length);
-    countEl.textContent = `${indices.length} 个指数`;
     grid.innerHTML = indices.length > 0
       ? indices.map(asset => renderAssetCard(asset)).join('')
-      : '<div class="empty">暂无指数数据</div>';
+      : '<div class="empty">暂无亚洲市场指数数据</div>';
   } catch (e) {
     console.error('Asia indices error:', e);
-    countEl.textContent = '加载失败';
-    grid.innerHTML = '<div class="empty">加载失败</div>';
+    grid.innerHTML = '<div class="empty">加载亚洲市场指数失败</div>';
   }
 }
 
 async function loadEuropeIndices() {
   const grid = document.getElementById('europeGrid');
-  const countEl = document.getElementById('europeCount');
-  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
-  countEl.textContent = '加载中...';
+  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载欧洲市场指数...</div>';
 
   try {
-    const res = await fetch(`${API}/api/search?region=欧洲市场&asset_type=index&limit=30`);
+    const res = await fetch(`${API}/api/search?region=欧洲市场&asset_type=index&limit=50`);
     if (!res.ok) throw new Error('API error');
     const data = await res.json();
     const indices = (data.results || []).filter(item => item.asset_type === 'index');
 
     console.log('Europe indices loaded:', indices.length);
-    countEl.textContent = `${indices.length} 个指数`;
     grid.innerHTML = indices.length > 0
       ? indices.map(asset => renderAssetCard(asset)).join('')
-      : '<div class="empty">暂无指数数据</div>';
+      : '<div class="empty">暂无欧洲市场指数数据</div>';
   } catch (e) {
     console.error('Europe indices error:', e);
-    countEl.textContent = '加载失败';
-    grid.innerHTML = '<div class="empty">加载失败</div>';
+    grid.innerHTML = '<div class="empty">加载欧洲市场指数失败</div>';
   }
 }
 
 async function loadAmericasIndices() {
   const grid = document.getElementById('americasGrid');
-  const countEl = document.getElementById('americasCount');
-  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
-  countEl.textContent = '加载中...';
+  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载美洲市场指数...</div>';
 
   try {
-    const res = await fetch(`${API}/api/search?region=美洲市场&asset_type=index&limit=30`);
+    const res = await fetch(`${API}/api/search?region=美洲市场&asset_type=index&limit=50`);
     if (!res.ok) throw new Error('API error');
     const data = await res.json();
     const indices = (data.results || []).filter(item => item.asset_type === 'index');
 
     console.log('Americas indices loaded:', indices.length);
-    countEl.textContent = `${indices.length} 个指数`;
     grid.innerHTML = indices.length > 0
       ? indices.map(asset => renderAssetCard(asset)).join('')
-      : '<div class="empty">暂无指数数据</div>';
+      : '<div class="empty">暂无美洲市场指数数据</div>';
   } catch (e) {
     console.error('Americas indices error:', e);
-    countEl.textContent = '加载失败';
-    grid.innerHTML = '<div class="empty">加载失败</div>';
+    grid.innerHTML = '<div class="empty">加载美洲市场指数失败</div>';
   }
 }
 
