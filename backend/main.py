@@ -9,7 +9,6 @@ import io
 import logging
 import os
 from datetime import datetime, timedelta
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -20,10 +19,32 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 
+# 导入数据模块
+from data_modules import (
+    GLOBAL_INDICES,
+    GLOBAL_STOCKS,
+    GLOBAL_ETF,
+    MARKET_REGIONS,
+    FUND_PREFIXES,
+)
+
+# 导入搜索模块
+from search_module import (
+    get_global_catalog,
+    get_full_catalog,
+    search_assets,
+    get_suggestions,
+    get_market_summary,
+    resolve_symbol,
+    get_hot_assets,
+    get_region_assets,
+    normalize_code as search_normalize_code,
+)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="定投收益计算器 API", version="1.2.0")
+app = FastAPI(title="定投收益计算器 API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -47,72 +68,14 @@ def frontend_dir() -> Path | None:
     return None
 
 
-INDEX_CONFIG: dict[str, dict[str, Any]] = {
-    "000300": {"name": "沪深300", "ak_symbol": "沪深300指数", "market": "A股", "region": "亚洲市场", "description": "A股蓝筹代表", "default_pe": 13.0, "earnings_growth": 6.0, "asset_type": "index", "fallback_price": 3600.0, "fallback_change_pct": 0.28},
-    "000016": {"name": "上证50", "ak_symbol": "上证50", "market": "A股", "region": "亚洲市场", "description": "超大盘蓝筹", "default_pe": 11.0, "earnings_growth": 5.0, "asset_type": "index", "fallback_price": 2450.0, "fallback_change_pct": 0.18},
-    "000905": {"name": "中证500", "ak_symbol": "中证500指数", "market": "A股", "region": "亚洲市场", "description": "中盘成长", "default_pe": 20.0, "earnings_growth": 7.0, "asset_type": "index", "fallback_price": 5400.0, "fallback_change_pct": -0.12},
-    "000852": {"name": "中证1000", "ak_symbol": "中证1000指数", "market": "A股", "region": "亚洲市场", "description": "小盘活跃", "default_pe": 25.0, "earnings_growth": 8.0, "asset_type": "index", "fallback_price": 5600.0, "fallback_change_pct": 0.36},
-    "399006": {"name": "创业板指", "ak_symbol": "创业板指数", "market": "A股", "region": "亚洲市场", "description": "成长科技", "default_pe": 30.0, "earnings_growth": 10.0, "asset_type": "index", "fallback_price": 1900.0, "fallback_change_pct": 0.52},
-    "000001": {"name": "上证综指", "ak_symbol": "上证综合指数", "market": "A股", "region": "亚洲市场", "description": "A股全市场", "default_pe": 14.0, "earnings_growth": 6.0, "asset_type": "index", "fallback_price": 3100.0, "fallback_change_pct": 0.21},
-    "399001": {"name": "深证成指", "ak_symbol": None, "market": "A股", "region": "亚洲市场", "description": "深市核心指数", "default_pe": 22.0, "earnings_growth": 8.0, "asset_type": "index", "fallback_price": 9800.0, "fallback_change_pct": 0.34},
-    "HSI": {"name": "恒生指数", "ak_symbol": None, "market": "港股", "region": "亚洲市场", "description": "港股蓝筹", "default_pe": 10.0, "earnings_growth": 5.0, "asset_type": "index", "fallback_price": 18500.0, "fallback_change_pct": 0.45},
-    "N225": {"name": "日经225", "ak_symbol": None, "market": "日本", "region": "亚洲市场", "description": "日本核心指数", "default_pe": 20.0, "earnings_growth": 5.0, "asset_type": "index", "fallback_price": 38500.0, "fallback_change_pct": -0.22},
-    "KOSPI": {"name": "韩国KOSPI", "ak_symbol": None, "market": "韩国", "region": "亚洲市场", "description": "韩国综合指数", "default_pe": 13.0, "earnings_growth": 5.0, "asset_type": "index", "fallback_price": 2700.0, "fallback_change_pct": 0.16},
-    "SENSEX": {"name": "印度SENSEX", "ak_symbol": None, "market": "印度", "region": "亚洲市场", "description": "印度大盘指数", "default_pe": 23.0, "earnings_growth": 8.0, "asset_type": "index", "fallback_price": 74000.0, "fallback_change_pct": 0.31},
-    "STOXX50": {"name": "欧洲STOXX50", "ak_symbol": None, "market": "欧洲", "region": "欧洲市场", "description": "欧元区蓝筹", "default_pe": 14.0, "earnings_growth": 4.0, "asset_type": "index", "fallback_price": 5000.0, "fallback_change_pct": 0.12},
-    "DAX": {"name": "德国DAX", "ak_symbol": None, "market": "德国", "region": "欧洲市场", "description": "德国核心指数", "default_pe": 15.0, "earnings_growth": 4.0, "asset_type": "index", "fallback_price": 18200.0, "fallback_change_pct": 0.2},
-    "FTSE": {"name": "英国富时100", "ak_symbol": None, "market": "英国", "region": "欧洲市场", "description": "英国蓝筹指数", "default_pe": 12.0, "earnings_growth": 3.0, "asset_type": "index", "fallback_price": 8200.0, "fallback_change_pct": -0.08},
-    "CAC40": {"name": "法国CAC40", "ak_symbol": None, "market": "法国", "region": "欧洲市场", "description": "法国核心指数", "default_pe": 14.0, "earnings_growth": 4.0, "asset_type": "index", "fallback_price": 8050.0, "fallback_change_pct": 0.1},
-    "SPX": {"name": "标普500", "ak_symbol": None, "market": "美股", "region": "美洲市场", "description": "美股大盘", "default_pe": 22.0, "earnings_growth": 7.0, "asset_type": "index", "fallback_price": 5250.0, "fallback_change_pct": 0.24},
-    "NDX": {"name": "纳斯达克100", "ak_symbol": None, "market": "美股", "region": "美洲市场", "description": "科技成长", "default_pe": 28.0, "earnings_growth": 10.0, "asset_type": "index", "fallback_price": 18300.0, "fallback_change_pct": 0.42},
-    "DJI": {"name": "道琼斯工业指数", "ak_symbol": None, "market": "美股", "region": "美洲市场", "description": "美国蓝筹指数", "default_pe": 20.0, "earnings_growth": 5.0, "asset_type": "index", "fallback_price": 39000.0, "fallback_change_pct": 0.14},
-    "RUT": {"name": "罗素2000", "ak_symbol": None, "market": "美股", "region": "美洲市场", "description": "美国小盘指数", "default_pe": 24.0, "earnings_growth": 6.0, "asset_type": "index", "fallback_price": 2100.0, "fallback_change_pct": -0.18},
-    "BVSP": {"name": "巴西Bovespa", "ak_symbol": None, "market": "巴西", "region": "美洲市场", "description": "巴西核心指数", "default_pe": 10.0, "earnings_growth": 4.0, "asset_type": "index", "fallback_price": 128000.0, "fallback_change_pct": 0.22},
-    "TSX": {"name": "加拿大TSX", "ak_symbol": None, "market": "加拿大", "region": "美洲市场", "description": "加拿大综合指数", "default_pe": 16.0, "earnings_growth": 4.0, "asset_type": "index", "fallback_price": 22000.0, "fallback_change_pct": 0.09},
-}
-
-STATIC_SECURITIES: list[dict[str, Any]] = [
-    {"code": "600519", "name": "贵州茅台", "market": "A股", "asset_type": "stock", "default_pe": 25.0, "earnings_growth": 6.0},
-    {"code": "000858", "name": "五粮液", "market": "A股", "asset_type": "stock", "default_pe": 20.0, "earnings_growth": 6.0},
-    {"code": "601318", "name": "中国平安", "market": "A股", "asset_type": "stock", "default_pe": 10.0, "earnings_growth": 4.0},
-    {"code": "600036", "name": "招商银行", "market": "A股", "asset_type": "stock", "default_pe": 8.0, "earnings_growth": 4.0},
-    {"code": "000333", "name": "美的集团", "market": "A股", "asset_type": "stock", "default_pe": 15.0, "earnings_growth": 5.0},
-    {"code": "300750", "name": "宁德时代", "market": "A股", "asset_type": "stock", "default_pe": 24.0, "earnings_growth": 10.0},
-    {"code": "002594", "name": "比亚迪", "market": "A股", "asset_type": "stock", "default_pe": 22.0, "earnings_growth": 9.0},
-    {"code": "600276", "name": "恒瑞医药", "market": "A股", "asset_type": "stock", "default_pe": 35.0, "earnings_growth": 9.0},
-    {"code": "510300", "name": "沪深300ETF", "market": "基金", "asset_type": "fund", "default_pe": 13.0, "earnings_growth": 6.0},
-    {"code": "510050", "name": "上证50ETF", "market": "基金", "asset_type": "fund", "default_pe": 11.0, "earnings_growth": 5.0},
-    {"code": "510500", "name": "中证500ETF", "market": "基金", "asset_type": "fund", "default_pe": 20.0, "earnings_growth": 7.0},
-    {"code": "159915", "name": "创业板ETF", "market": "基金", "asset_type": "fund", "default_pe": 30.0, "earnings_growth": 10.0},
-    {"code": "513500", "name": "标普500ETF", "market": "基金", "asset_type": "fund", "default_pe": 22.0, "earnings_growth": 7.0},
-    {"code": "513100", "name": "纳指ETF", "market": "基金", "asset_type": "fund", "default_pe": 28.0, "earnings_growth": 10.0},
-    {"code": "513030", "name": "德国ETF", "market": "基金", "asset_type": "fund", "default_pe": 15.0, "earnings_growth": 4.0},
-    {"code": "164906", "name": "中国互联LOF", "market": "基金", "asset_type": "fund", "default_pe": 18.0, "earnings_growth": 8.0},
-    {"code": "AAPL", "name": "苹果", "market": "美股", "asset_type": "stock", "default_pe": 28.0, "earnings_growth": 7.0},
-    {"code": "MSFT", "name": "微软", "market": "美股", "asset_type": "stock", "default_pe": 32.0, "earnings_growth": 10.0},
-    {"code": "NVDA", "name": "英伟达", "market": "美股", "asset_type": "stock", "default_pe": 45.0, "earnings_growth": 15.0},
-    {"code": "TSLA", "name": "特斯拉", "market": "美股", "asset_type": "stock", "default_pe": 50.0, "earnings_growth": 12.0},
-    {"code": "AMZN", "name": "亚马逊", "market": "美股", "asset_type": "stock", "default_pe": 35.0, "earnings_growth": 10.0},
-    {"code": "GOOGL", "name": "谷歌A", "market": "美股", "asset_type": "stock", "default_pe": 26.0, "earnings_growth": 8.0},
-    {"code": "META", "name": "Meta Platforms", "market": "美股", "asset_type": "stock", "default_pe": 24.0, "earnings_growth": 8.0},
-    {"code": "SPY", "name": "标普500 ETF", "market": "美股ETF", "asset_type": "fund", "default_pe": 22.0, "earnings_growth": 7.0},
-    {"code": "QQQ", "name": "纳斯达克100 ETF", "market": "美股ETF", "asset_type": "fund", "default_pe": 28.0, "earnings_growth": 10.0},
-    {"code": "VOO", "name": "Vanguard标普500ETF", "market": "美股ETF", "asset_type": "fund", "default_pe": 22.0, "earnings_growth": 7.0},
-    {"code": "0700.HK", "name": "腾讯控股", "market": "港股", "asset_type": "stock", "default_pe": 18.0, "earnings_growth": 8.0},
-    {"code": "9988.HK", "name": "阿里巴巴-W", "market": "港股", "asset_type": "stock", "default_pe": 15.0, "earnings_growth": 7.0},
-    {"code": "3690.HK", "name": "美团-W", "market": "港股", "asset_type": "stock", "default_pe": 35.0, "earnings_growth": 10.0},
-    {"code": "2800.HK", "name": "盈富基金", "market": "港股ETF", "asset_type": "fund", "default_pe": 10.0, "earnings_growth": 5.0},
-]
-
-INDEX_KLINE_CODES = {code for code in INDEX_CONFIG if code.isdigit() and len(code) == 6}
-FUND_PREFIXES = ("159", "160", "161", "162", "164", "510", "511", "512", "513", "515", "516", "517", "518", "588")
+# 兼容旧代码的配置
+INDEX_CONFIG = GLOBAL_INDICES
+INDEX_KLINE_CODES = {code for code in GLOBAL_INDICES if code.isdigit() and len(code) == 6}
 
 
 def normalize_code(code: str) -> str:
-    code = str(code or "").upper().strip()
-    if code.endswith((".HK", ".US", ".SH", ".SZ")):
-        return code
-    return code.zfill(6) if code.isdigit() and len(code) < 6 else code
+    """标准化证券代码（兼容旧代码）。"""
+    return search_normalize_code(code)
 
 
 def first_col(columns: list[str], names: list[str], contains: list[str] | None = None) -> str | None:
@@ -139,71 +102,39 @@ def safe_float(value: Any, default: float | None = None) -> float | None:
 
 
 def base_catalog() -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for code, config in INDEX_CONFIG.items():
-        rows.append({"code": code, **config})
-    rows.extend(STATIC_SECURITIES)
-    return rows
+    """基础目录（兼容旧代码）。"""
+    return list(get_global_catalog())
 
 
 @lru_cache(maxsize=1)
 def search_catalog() -> tuple[dict[str, Any], ...]:
-    rows = base_catalog()
-    seen = {row["code"] for row in rows}
-
-    try:
-        df = ak.stock_info_a_code_name()
-        if df is not None and not df.empty:
-            code_col = first_col(list(df.columns), ["code", "代码", "证券代码"], ["代码", "code"])
-            name_col = first_col(list(df.columns), ["name", "名称", "证券简称"], ["名称", "name", "简称"])
-            if code_col and name_col:
-                for _, row in df.iterrows():
-                    code = normalize_code(str(row.get(code_col, "")))
-                    if code and code not in seen:
-                        rows.append({"code": code, "name": str(row.get(name_col, code)).strip(), "market": "A股", "asset_type": "stock", "default_pe": 15.0, "earnings_growth": 6.0, "source": "AKShare · 东方财富"})
-                        seen.add(code)
-    except Exception as exc:
-        logger.warning("A-share search catalog failed: %s", exc)
-
-    try:
-        df = ak.fund_name_em()
-        if df is not None and not df.empty:
-            code_col = first_col(list(df.columns), ["基金代码", "code"], ["代码", "code"])
-            name_col = first_col(list(df.columns), ["基金简称", "简称", "name"], ["简称", "名称", "name"])
-            type_col = first_col(list(df.columns), ["基金类型", "类型"], ["类型"])
-            py_col = first_col(list(df.columns), ["拼音缩写", "拼音全称", "pinyin"], ["拼音", "pinyin"])
-            if code_col and name_col:
-                for _, row in df.iterrows():
-                    code = normalize_code(str(row.get(code_col, "")))
-                    if code and code not in seen:
-                        rows.append({
-                            "code": code,
-                            "name": str(row.get(name_col, code)).strip(),
-                            "market": "基金",
-                            "asset_type": "fund",
-                            "fund_type": str(row.get(type_col, "基金")).strip() if type_col else "基金",
-                            "pinyin": str(row.get(py_col, "")).strip() if py_col else "",
-                            "default_pe": 16.0,
-                            "earnings_growth": 6.0,
-                            "source": "AKShare · 东方财富基金",
-                        })
-                        seen.add(code)
-    except Exception as exc:
-        logger.warning("Fund search catalog failed: %s", exc)
-
-    return tuple(rows)
+    """搜索目录（兼容旧代码，使用新模块）。"""
+    return get_full_catalog()
 
 
 def resolve_security(code: str) -> dict[str, Any]:
+    """解析证券信息（兼容旧代码，使用新模块）。"""
+    result = resolve_symbol(code)
+    if result:
+        return result
+
+    # 降级处理
     code = normalize_code(code)
-    if code in INDEX_CONFIG:
-        return {"code": code, **INDEX_CONFIG[code]}
-    for item in search_catalog():
-        if item.get("code") == code:
-            return dict(item)
     market = "A股" if code.isdigit() and len(code) == 6 else "海外"
     asset_type = "fund" if code.isdigit() and code.startswith(FUND_PREFIXES) else "stock"
-    return {"code": code, "name": code, "market": market, "asset_type": asset_type, "default_pe": 16.0, "earnings_growth": 6.0, "description": "自定义标的"}
+    return {
+        "code": code,
+        "name": code,
+        "market": market,
+        "region": "其他",
+        "country": "-",
+        "currency": "-",
+        "description": "自定义标的",
+        "asset_type": asset_type,
+        "default_pe": 16.0,
+        "earnings_growth": 6.0,
+        "source": "用户输入",
+    }
 
 
 def fetch_a_index_pe(ak_symbol: str) -> dict[str, Any] | None:
@@ -631,7 +562,82 @@ def fetch_stock_news(code: str, limit: int = 12) -> list[dict[str, Any]]:
 
 @app.get("/api/health")
 def api_health() -> dict[str, str]:
-    return {"message": "定投收益计算器 API 运行中", "version": "1.2.0"}
+    return {"message": "定投收益计算器 API 运行中", "version": "2.0.0"}
+
+
+@app.get("/api/market/regions")
+def get_market_regions() -> dict[str, Any]:
+    """获取市场区域配置。"""
+    return {
+        "regions": [
+            {"name": region, **config}
+            for region, config in MARKET_REGIONS.items()
+        ]
+    }
+
+
+@app.get("/api/market/summary")
+def get_api_market_summary() -> dict[str, Any]:
+    """获取市场概览统计。"""
+    return get_market_summary()
+
+
+@app.get("/api/market/hot")
+def get_api_hot_assets(
+    region: str = Query(default=""),
+    limit: int = Query(default=10, ge=1, le=30),
+) -> dict[str, Any]:
+    """获取热门标的。"""
+    assets = get_hot_assets(region=region, limit=limit)
+    return {"region": region or "全部", "count": len(assets), "assets": assets}
+
+
+@app.get("/api/market/region/{region_name}")
+def get_api_region_assets(
+    region_name: str,
+    asset_type: str = Query(default=""),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> dict[str, Any]:
+    """获取指定区域的标的。"""
+    assets = get_region_assets(region=region_name, asset_type=asset_type, limit=limit)
+    return {
+        "region": region_name,
+        "asset_type": asset_type or "全部",
+        "count": len(assets),
+        "assets": assets,
+    }
+
+
+@app.get("/api/search/suggest")
+def get_api_suggestions(
+    q: str = Query(default="", max_length=50),
+    limit: int = Query(default=10, ge=1, le=20),
+) -> dict[str, Any]:
+    """获取搜索联想建议。"""
+    suggestions = get_suggestions(query=q, limit=limit)
+    return {"query": q, "suggestions": suggestions, "count": len(suggestions)}
+
+
+@app.get("/api/search")
+def get_api_search(
+    q: str = Query(default="", max_length=50),
+    region: str = Query(default=""),
+    country: str = Query(default=""),
+    market: str = Query(default=""),
+    asset_type: str = Query(default=""),
+    hot_only: bool = Query(default=False),
+    limit: int = Query(default=20, ge=1, le=50),
+) -> dict[str, Any]:
+    """搜索全球证券（支持多种筛选）。"""
+    return search_assets(
+        query=q,
+        region=region,
+        country=country,
+        market=market,
+        asset_type=asset_type,
+        hot_only=hot_only,
+        limit=limit,
+    )
 
 
 @app.get("/")
@@ -660,21 +666,34 @@ def get_indices() -> list[dict[str, Any]]:
 
 @app.get("/api/market/indices")
 def get_market_indices() -> dict[str, Any]:
+    """获取按区域分组的指数列表。"""
     regions = ["亚洲市场", "欧洲市场", "美洲市场"]
     grouped: dict[str, list[dict[str, Any]]] = {region: [] for region in regions}
-    for code, config in INDEX_CONFIG.items():
+
+    for code, config in GLOBAL_INDICES.items():
         region = config.get("region", "其他")
-        grouped.setdefault(region, []).append(
-            {
-                "code": code,
-                "name": config["name"],
-                "market": config["market"],
-                "description": config["description"],
-                "default_pe": config["default_pe"],
-                "earnings_growth": config["earnings_growth"],
-            }
-        )
-    return {"regions": [{"name": region, "items": grouped.get(region, [])} for region in regions], "source": "AKShare 可用时实时查询；备份为内置关键指数清单"}
+        if region in grouped:
+            grouped[region].append(
+                {
+                    "code": code,
+                    "name": config["name"],
+                    "market": config["market"],
+                    "country": config["country"],
+                    "currency": config["currency"],
+                    "description": config["description"],
+                    "default_pe": config["default_pe"],
+                    "earnings_growth": config["earnings_growth"],
+                    "hot": config.get("hot", False),
+                }
+            )
+
+    return {
+        "regions": [
+            {"name": region, "items": grouped.get(region, [])}
+            for region in regions
+        ],
+        "source": "内置数据库 + AKShare",
+    }
 
 
 @app.get("/api/search")

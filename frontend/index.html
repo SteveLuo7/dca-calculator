@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>定投收益计算器</title>
+<title>定投收益计算器 - 全球市场版</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <style>
@@ -28,14 +28,14 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: var(--font); }
   button, input, select { font: inherit; }
-  .app { max-width: 1180px; margin: 0 auto; padding: 24px 20px 40px; }
+  .app { max-width: 1400px; margin: 0 auto; padding: 24px 20px 40px; }
   header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px; }
   .logo { display: flex; align-items: center; gap: 12px; }
   .logo-icon { width: 36px; height: 36px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; font-weight: 700; }
   h1 { font-size: 18px; font-weight: 600; }
   .subtitle { font-size: 12px; color: var(--text2); margin-top: 2px; }
   .updated { color: var(--text3); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
-  .main-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+  .main-grid { display: grid; grid-template-columns: 380px 1fr; gap: 16px; align-items: start; }
   .left-col, .right-col { display: flex; flex-direction: column; gap: 14px; }
   .panel, .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); }
   .overview-panel { padding: 16px; }
@@ -52,16 +52,56 @@
   .panel { padding: 18px; }
   .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
   .panel-title { color: var(--text3); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
-  .idx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px; }
-  .idx-btn { text-align: left; background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; transition: .15s; min-height: 68px; }
-  .idx-btn:hover { border-color: var(--border2); }
-  .idx-btn.active { border-color: var(--accent); background: rgba(79,142,247,.12); }
-  .iname { font-size: 13px; font-weight: 500; }
-  .icode { color: var(--text3); font-family: var(--mono); font-size: 10px; margin-top: 1px; }
-  .mkt { display: inline-block; margin-top: 4px; padding: 1px 5px; border-radius: 4px; font-size: 10px; }
-  .mkt-a { background: rgba(79,142,247,.15); color: var(--accent); }
-  .mkt-hk { background: rgba(245,166,35,.12); color: var(--amber); }
-  .mkt-us { background: rgba(46,204,150,.12); color: var(--green); }
+
+  /* 搜索框样式 */
+  .search-container { position: relative; margin-bottom: 16px; }
+  .search-input { width: 100%; background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px 10px 36px; outline: none; }
+  .search-input:focus { border-color: var(--accent); }
+  .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 14px; }
+  .search-suggestions { position: absolute; top: 100%; left: 0; right: 0; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-top: 4px; max-height: 300px; overflow-y: auto; z-index: 100; display: none; }
+  .search-suggestions.show { display: block; }
+  .suggestion-item { padding: 10px 12px; cursor: pointer; border-bottom: 1px solid var(--border); }
+  .suggestion-item:hover { background: var(--bg3); }
+  .suggestion-code { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+  .suggestion-name { font-size: 13px; color: var(--text); }
+  .suggestion-meta { display: flex; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--text3); }
+  .suggestion-tag { padding: 2px 6px; border-radius: 4px; background: rgba(79,142,247,.12); color: var(--accent); }
+  .suggestion-tag.hot { background: rgba(245,166,35,.12); color: var(--amber); }
+
+  /* 区域标签页 */
+  .region-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+  .region-tab { border: 1px solid var(--border); background: transparent; color: var(--text2); border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; transition: .15s; }
+  .region-tab:hover { border-color: var(--border2); }
+  .region-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* 资产类型筛选 */
+  .type-filters { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .type-filter { border: 1px solid var(--border); background: transparent; color: var(--text2); border-radius: 5px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
+  .type-filter:hover { border-color: var(--border2); }
+  .type-filter.active { background: var(--bg3); border-color: var(--border2); color: var(--text); }
+
+  /* 资产网格 */
+  .asset-grid { display: grid; grid-template-columns: 1fr; gap: 6px; max-height: 400px; overflow-y: auto; padding-right: 4px; }
+  .asset-grid::-webkit-scrollbar { width: 6px; }
+  .asset-grid::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .asset-card { text-align: left; background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; cursor: pointer; transition: .15s; min-height: 72px; }
+  .asset-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+  .asset-card.active { border-color: var(--accent); background: rgba(79,142,247,.12); }
+  .asset-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+  .asset-name { font-size: 13px; font-weight: 500; }
+  .asset-code { color: var(--text3); font-family: var(--mono); font-size: 10px; }
+  .asset-desc { font-size: 11px; color: var(--text2); margin-top: 4px; }
+  .asset-tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+  .tag-a { background: rgba(79,142,247,.15); color: var(--accent); }
+  .tag-hk { background: rgba(245,166,35,.12); color: var(--amber); }
+  .tag-us { background: rgba(46,204,150,.12); color: var(--green); }
+  .tag-eu { background: rgba(155,89,182,.12); color: #9b59b6; }
+  .tag-index { background: rgba(52,152,219,.15); color: #3498db; }
+  .tag-stock { background: rgba(46,204,150,.15); color: var(--green); }
+  .tag-fund { background: rgba(155,89,182,.15); color: #9b59b6; }
+  .tag-hot { background: rgba(245,166,35,.15); color: var(--amber); }
+
   .field { margin-bottom: 14px; }
   .field label { display: block; margin-bottom: 5px; color: var(--text2); font-size: 12px; }
   input, select { width: 100%; background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; outline: none; }
@@ -127,7 +167,7 @@
   .empty { color: var(--text3); text-align: center; padding: 34px 18px; font-size: 13px; }
   .toast { position: fixed; right: 24px; bottom: 24px; z-index: 99; opacity: 0; pointer-events: none; transform: translateY(10px); transition: .25s; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
   .toast.show { opacity: 1; transform: translateY(0); }
-  @media (max-width: 860px) {
+  @media (max-width: 1024px) {
     .main-grid { grid-template-columns: 1fr; }
     .stat-grid { grid-template-columns: 1fr; }
     header { align-items: flex-start; flex-direction: column; }
@@ -141,7 +181,7 @@
       <div class="logo-icon">DCA</div>
       <div>
         <h1>定投收益计算器</h1>
-        <div class="subtitle">PE 估值 · K 线行情 · 股票新闻 · 长期复利模拟</div>
+        <div class="subtitle">全球市场 · PE 估值 · K 线行情 · 智能搜索</div>
       </div>
     </div>
     <div class="updated" id="updateTime"></div>
@@ -150,11 +190,41 @@
   <div class="main-grid">
     <div class="left-col">
       <section class="panel">
-        <div class="panel-title">选择指数 / 股票</div>
-        <div class="idx-grid" id="idxGrid"></div>
-        <div class="field" style="margin-bottom:0">
-          <label>自定义代码，例如 000300、600519、SPX</label>
-          <input id="customCode" type="text" placeholder="输入后按回车查询" />
+        <div class="panel-title">选择投资标的</div>
+
+        <!-- 搜索框 -->
+        <div class="search-container">
+          <span class="search-icon">🔍</span>
+          <input id="searchInput" class="search-input" type="text" placeholder="搜索代码、名称或公司..." />
+          <div id="searchSuggestions" class="search-suggestions"></div>
+        </div>
+
+        <!-- 区域标签 -->
+        <div class="region-tabs" id="regionTabs">
+          <button class="region-tab active" data-region="全部">全部</button>
+          <button class="region-tab" data-region="亚洲市场">亚洲市场</button>
+          <button class="region-tab" data-region="欧洲市场">欧洲市场</button>
+          <button class="region-tab" data-region="美洲市场">美洲市场</button>
+        </div>
+
+        <!-- 资产类型筛选 -->
+        <div class="type-filters" id="typeFilters">
+          <button class="type-filter active" data-type="">全部</button>
+          <button class="type-filter" data-type="index">指数</button>
+          <button class="type-filter" data-type="stock">股票</button>
+          <button class="type-filter" data-type="fund">基金</button>
+          <button class="type-filter" data-type="hot">热门</button>
+        </div>
+
+        <!-- 资产列表 -->
+        <div class="asset-grid" id="assetGrid">
+          <div class="loading"><span class="spin"></span>加载中...</div>
+        </div>
+
+        <!-- 自定义代码 -->
+        <div class="field" style="margin-top:12px">
+          <label>自定义代码</label>
+          <input id="customCode" type="text" placeholder="例如：000300、AAPL、0700.HK" />
         </div>
       </section>
 
@@ -203,7 +273,7 @@
 
       <div class="stat-grid" id="statCards">
         <div class="stat-card" style="grid-column:1/-1">
-          <div class="empty">选择指数或股票后，点击"计算收益预测"查看结果。</div>
+          <div class="empty">选择投资标的后，点击"计算收益预测"查看结果。</div>
         </div>
       </div>
 
@@ -294,17 +364,6 @@ const API = window.location.hostname === 'localhost' || window.location.hostname
   ? 'http://localhost:8000'
   : 'https://dca-calculator-production.up.railway.app';
 
-const PRESETS = [
-  { code:'000300', name:'沪深300', market:'A股', default_pe:13, earnings_growth:6 },
-  { code:'000016', name:'上证50', market:'A股', default_pe:11, earnings_growth:5 },
-  { code:'000905', name:'中证500', market:'A股', default_pe:20, earnings_growth:7 },
-  { code:'000852', name:'中证1000', market:'A股', default_pe:25, earnings_growth:8 },
-  { code:'399006', name:'创业板指', market:'A股', default_pe:30, earnings_growth:10 },
-  { code:'000001', name:'上证综指', market:'A股', default_pe:14, earnings_growth:6 },
-  { code:'HSI', name:'恒生指数', market:'港股', default_pe:10, earnings_growth:5 },
-  { code:'SPX', name:'标普500', market:'美股', default_pe:22, earnings_growth:7 },
-];
-const mktClass = { 'A股':'mkt-a', '港股':'mkt-hk', '美股':'mkt-us' };
 const fmt = n => '¥' + Math.round(n).toLocaleString('zh-CN');
 const fmtP = r => (r * 100).toFixed(1) + '%';
 const fmtN = n => Math.round(n).toLocaleString('zh-CN');
@@ -319,10 +378,14 @@ let state = {
   chartMode: 'kline',
   klinePeriod: 'daily',
   klineRange: 'all',
+  filterRegion: '全部',
+  filterType: '',
+  searchQuery: '',
 };
 let chartInst = null;
 let klineChart = null;
 let volumeChart = null;
+let searchTimer = null;
 
 function toast(msg, dur=2600) {
   const el = document.getElementById('toast');
@@ -331,45 +394,59 @@ function toast(msg, dur=2600) {
   setTimeout(() => el.classList.remove('show'), dur);
 }
 
-function normalizeCode(code) {
-  const trimmed = String(code || '').trim().toUpperCase();
-  return /^\d{1,5}$/.test(trimmed) ? trimmed.padStart(6, '0') : trimmed;
+function getTagClass(market, assetType, isHot) {
+  if (isHot) return 'tag-hot';
+  if (assetType === 'index') return 'tag-index';
+  if (assetType === 'stock') return 'tag-stock';
+  if (assetType === 'fund') return 'tag-fund';
+  if (market.includes('美股')) return 'tag-us';
+  if (market.includes('港股')) return 'tag-hk';
+  if (market.includes('欧洲') || market.includes('德国') || market.includes('英国') || market.includes('法国')) return 'tag-eu';
+  return 'tag-a';
 }
 
-function getRates(pe, earningsGrowth) {
-  const ey = 1 / Math.max(pe, 1);
-  const g = (earningsGrowth || 6) / 100;
-  return {
-    bear: Math.max(ey * 0.65, 0.03),
-    base: ey + g * 0.5,
-    bull: ey + g,
-  };
+function renderAssetCard(asset) {
+  const isActive = asset.code === state.selectedCode;
+  return `
+    <div class="asset-card${isActive ? ' active' : ''}" onclick="selectAsset('${asset.code}')">
+      <div class="asset-header">
+        <div>
+          <div class="asset-name">${asset.name}</div>
+          <div class="asset-code">${asset.code}</div>
+        </div>
+        <div class="asset-tags">
+          ${asset.hot ? '<span class="tag tag-hot">热门</span>' : ''}
+          <span class="tag ${getTagClass(asset.market, asset.asset_type, false)}">${asset.market}</span>
+        </div>
+      </div>
+      <div class="asset-desc">${asset.description || asset.asset_type}</div>
+    </div>`;
 }
 
-function calcDCA(annualRate, periodicAmt, freq) {
-  const r = (1 + annualRate) ** (1 / freq) - 1;
-  return Array.from({ length: 30 }, (_, i) => {
-    const yr = i + 1;
-    const n = yr * freq;
-    const fv = periodicAmt * ((1 + r) ** n - 1) / r * (1 + r);
-    const invested = periodicAmt * n;
-    const gain = fv - invested;
-    return { yr, fv: Math.round(fv), invested: Math.round(invested), gain: Math.round(gain), gainPct: gain / invested, annualEff: (fv / invested) ** (1 / yr) - 1 };
-  });
+async function loadAssets() {
+  const assetGrid = document.getElementById('assetGrid');
+  assetGrid.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
+
+  try {
+    const regionParam = state.filterRegion === '全部' ? '' : state.filterRegion;
+    const typeParam = state.filterType === 'hot' ? '' : state.filterType;
+    const hotOnly = state.filterType === 'hot';
+
+    const res = await fetch(`${API}/api/search?region=${encodeURIComponent(regionParam)}&asset_type=${encodeURIComponent(typeParam)}&hot_only=${hotOnly}&limit=50`);
+    if (!res.ok) throw new Error('Search API error');
+    const data = await res.json();
+    state.currentAssets = data.results || [];
+
+    assetGrid.innerHTML = state.currentAssets.map(asset => renderAssetCard(asset)).join('');
+  } catch (e) {
+    assetGrid.innerHTML = '<div class="empty">加载失败，请刷新重试</div>';
+    console.error(e);
+  }
 }
 
-function renderPresets() {
-  document.getElementById('idxGrid').innerHTML = PRESETS.map(p => `
-    <button class="idx-btn${p.code === state.selectedCode ? ' active' : ''}" onclick="selectIndex('${p.code}')">
-      <div class="iname">${p.name}</div>
-      <div class="icode">${p.code}</div>
-      <span class="mkt ${mktClass[p.market] || ''}">${p.market}</span>
-    </button>`).join('');
-}
-
-async function selectIndex(code) {
-  state.selectedCode = normalizeCode(code);
-  renderPresets();
+async function selectAsset(code) {
+  state.selectedCode = code;
+  loadAssets();
   await refreshSelectedCode();
 }
 
@@ -391,8 +468,7 @@ async function fetchPE(code) {
     fetchPEHistory(code);
     return data;
   } catch (e) {
-    const fallback = PRESETS.find(p => p.code === code);
-    state.peData = { code, name: fallback?.name || code, market: fallback?.market || 'A股', pe: fallback?.default_pe || 15, earnings_growth: fallback?.earnings_growth || 6, source: '离线默认值', updated_at: '-' };
+    state.peData = { code, name: code, market: '自定义', pe: 16, earnings_growth: 6, source: '默认值', updated_at: '-' };
     renderPEBlock(state.peData);
     toast('无法获取 PE，已使用默认值');
     return state.peData;
@@ -496,8 +572,30 @@ function renderPEBlock(data) {
   document.getElementById('rateBull').textContent = fmtP(rates.bull);
 }
 
+function getRates(pe, earningsGrowth) {
+  const ey = 1 / Math.max(pe, 1);
+  const g = (earningsGrowth || 6) / 100;
+  return {
+    bear: Math.max(ey * 0.65, 0.03),
+    base: ey + g * 0.5,
+    bull: ey + g,
+  };
+}
+
+function calcDCA(annualRate, periodicAmt, freq) {
+  const r = (1 + annualRate) ** (1 / freq) - 1;
+  return Array.from({ length: 30 }, (_, i) => {
+    const yr = i + 1;
+    const n = yr * freq;
+    const fv = periodicAmt * ((1 + r) ** n - 1) / r * (1 + r);
+    const invested = periodicAmt * n;
+    const gain = fv - invested;
+    return { yr, fv: Math.round(fv), invested: Math.round(invested), gain: Math.round(gain), gainPct: gain / invested, annualEff: (fv / invested) ** (1 / yr) - 1 };
+  });
+}
+
 function runCalc() {
-  if (!state.peData) return toast('请先选择指数或股票');
+  if (!state.peData) return toast('请先选择投资标的');
   const amount = parseFloat(document.getElementById('amount').value) || 2000;
   const freq = parseInt(document.getElementById('freq').value, 10) || 12;
   const manualPE = parseFloat(document.getElementById('manualPE').value);
@@ -827,24 +925,89 @@ function exportCSV() {
 
 function printPage() { window.print(); }
 
+// 搜索功能
+async function handleSearch(query) {
+  const suggestionsEl = document.getElementById('searchSuggestions');
+  if (!query.trim()) {
+    suggestionsEl.classList.remove('show');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/search?q=${encodeURIComponent(query)}&limit=10`);
+    if (!res.ok) throw new Error('Search API error');
+    const data = await res.json();
+    const suggestions = data.results || [];
+
+    if (suggestions.length === 0) {
+      suggestionsEl.innerHTML = '<div class="empty">无匹配结果</div>';
+    } else {
+      suggestionsEl.innerHTML = suggestions.map(s => `
+        <div class="suggestion-item" onclick="selectAsset('${s.code}')">
+          <div class="suggestion-code">${s.code}</div>
+          <div class="suggestion-name">${s.name}</div>
+          <div class="suggestion-meta">
+            <span class="suggestion-tag">${s.market}</span>
+            <span>${s.region}</span>
+            ${s.hot ? '<span class="suggestion-tag hot">热门</span>' : ''}
+          </div>
+        </div>
+      `).join('');
+    }
+    suggestionsEl.classList.add('show');
+  } catch (e) {
+    console.error('Search error:', e);
+    suggestionsEl.classList.remove('show');
+  }
+}
+
+// 事件监听
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => handleSearch(e.target.value), 300);
+});
+
+document.getElementById('searchInput').addEventListener('blur', () => {
+  setTimeout(() => document.getElementById('searchSuggestions').classList.remove('show'), 200);
+});
+
+document.querySelectorAll('.region-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.region-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.filterRegion = btn.dataset.region;
+    loadAssets();
+  });
+});
+
+document.querySelectorAll('.type-filter').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.type-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.filterType = btn.dataset.type;
+    loadAssets();
+  });
+});
+
 document.getElementById('customCode').addEventListener('keydown', async e => {
   if (e.key !== 'Enter') return;
-  const code = normalizeCode(e.target.value);
+  const code = e.target.value.trim().toUpperCase();
   if (!code) return;
   state.selectedCode = code;
-  renderPresets();
+  loadAssets();
   await refreshSelectedCode();
 });
+
 document.getElementById('manualPE').addEventListener('input', () => {
   if (state.peData) renderPEBlock(state.peData);
 });
+
 window.addEventListener('resize', () => {
   if (state.chartMode === 'kline' && state.klineData.length) renderKlineChart(state.klineData);
 });
 
 document.getElementById('updateTime').textContent = new Date().toLocaleString('zh-CN');
-renderPresets();
-refreshSelectedCode();
+loadAssets();
 </script>
 </body>
 </html>
