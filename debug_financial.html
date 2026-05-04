@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>调试财报API</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+    .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+    h1 { color: #333; }
+    h2 { color: #666; margin-top: 0; }
+    .code { background: #f5f5f5; padding: 10px; border-radius: 4px; font-family: monospace; }
+    button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    .success { color: green; }
+    .error { color: red; }
+    .result { margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>财报API调试工具</h1>
+
+  <div class="section">
+    <h2>1. API配置检查</h2>
+    <div class="code" id="apiConfig">检测中...</div>
+  </div>
+
+  <div class="section">
+    <h2>2. 测试API端点</h2>
+    <button onclick="testFinancialReports('600519')">测试贵州茅台 (600519)</button>
+    <button onclick="testFinancialReports('000001')">测试平安银行 (000001)</button>
+    <button onclick="testFinancialReports('510300')">测试沪深300ETF (510300)</button>
+    <div id="testResult"></div>
+  </div>
+
+  <div class="section">
+    <h2>3. 前端面板检查</h2>
+    <div id="panelCheck">检查中...</div>
+  </div>
+
+  <script>
+    const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+      ? 'http://localhost:8000'
+      : 'https://dca-calculator-production.up.railway.app';
+
+    // 1. API配置检查
+    document.getElementById('apiConfig').innerHTML = `
+      <strong>当前域名:</strong> ${window.location.hostname}<br>
+      <strong>API地址:</strong> ${API}<br>
+      <strong>完整API URL:</strong> ${API}/api/financial_reports/{code}
+    `;
+
+    // 2. 测试API
+    async function testFinancialReports(code) {
+      const resultDiv = document.getElementById('testResult');
+      resultDiv.innerHTML = '<div>测试中...</div>';
+
+      try {
+        const startTime = Date.now();
+        const url = `${API}/api/financial_reports/${encodeURIComponent(code)}`;
+        console.log('Requesting:', url);
+
+        const response = await fetch(url);
+        const duration = Date.now() - startTime;
+
+        const result = {
+          url: url,
+          status: response.status,
+          ok: response.ok,
+          duration: duration + 'ms'
+        };
+
+        if (response.ok) {
+          const data = await response.json();
+          result.success = true;
+          result.data = data;
+          result.message = `✓ 成功获取${data.code}(${data.name})的${data.count}条财报数据`;
+        } else {
+          result.success = false;
+          result.message = `✗ HTTP ${response.status}: ${response.statusText}`;
+          const text = await response.text();
+          result.error = text;
+        }
+
+        resultDiv.innerHTML = `
+          <div class="${result.success ? 'success' : 'error'}">${result.message}</div>
+          <div class="result">${JSON.stringify(result, null, 2)}</div>
+        `;
+      } catch (error) {
+        resultDiv.innerHTML = `
+          <div class="error">✗ 请求失败: ${error.message}</div>
+          <div class="result">${error.stack}</div>
+        `;
+      }
+    }
+
+    // 3. 前端面板检查
+    window.addEventListener('load', () => {
+      const financialPanel = document.getElementById('financialPanel');
+      const financialList = document.getElementById('financialList');
+      const fetchFinancialReports = typeof window.fetchFinancialReports;
+      const renderFinancialReports = typeof window.renderFinancialReports;
+
+      document.getElementById('panelCheck').innerHTML = `
+        <strong>在主页面中:</strong><br>
+        ✓ financialPanel元素: <span class="${financialPanel ? 'success' : 'error'}">${financialPanel ? '存在' : '不存在'}</span><br>
+        ✓ financialList元素: <span class="${financialList ? 'success' : 'error'}">${financialList ? '存在' : '不存在'}</span><br>
+        ✓ fetchFinancialReports函数: ${fetchFinancialReports !== 'undefined' ? '<span class="success">已定义</span>' : '<span class="error">未定义</span>'}<br>
+        ✓ renderFinancialReports函数: ${renderFinancialReports !== 'undefined' ? '<span class="success">已定义</span>' : '<span class="error">未定义</span>'}<br><br>
+        <strong>注意事项:</strong><br>
+        1. 确保后端已部署并包含最新代码（有 /api/financial_reports 端点）<br>
+        2. 确保前端页面已更新（有财报面板和对应JS函数）<br>
+        3. 刷新页面后选择A股股票（如600519）查看财报面板
+      `;
+    });
+  </script>
+</body>
+</html>
