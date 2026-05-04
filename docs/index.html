@@ -92,7 +92,9 @@
   #klineChart { height: 260px; border-bottom: 1px solid var(--border); }
   #volumeChart { height: 96px; }
   .range-tabs { display: flex; gap: 4px; }
-  .range-btn { padding: 4px 8px; font-size: 11px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--text2); cursor: pointer; }
+  .period-btn { padding: 4px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--text2); cursor: pointer; }
+  .period-btn.active { color: var(--text); background: var(--bg3); border-color: var(--border2); }
+  .range-btn { padding: 4px 10px; font-size: 12px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--text2); cursor: pointer; }
   .range-btn.active { color: var(--text); background: var(--bg3); border-color: var(--border2); }
   .tbl-wrap { overflow: auto; max-height: 320px; }
   table.data { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -199,9 +201,14 @@
         <div class="panel-head" id="klineToolbar" style="display:none;margin-bottom:10px">
           <div class="panel-title" id="klineTitle">行情</div>
           <div class="range-tabs">
-            <button class="range-btn active" onclick="loadKline(120, this)">半年</button>
-            <button class="range-btn" onclick="loadKline(250, this)">一年</button>
-            <button class="range-btn" onclick="loadKline(500, this)">两年</button>
+            <button class="period-btn active" data-period="daily" onclick="setKlinePeriod('daily', this)">日K</button>
+            <button class="period-btn" data-period="weekly" onclick="setKlinePeriod('weekly', this)">周K</button>
+            <button class="period-btn" data-period="monthly" onclick="setKlinePeriod('monthly', this)">月K</button>
+            <button class="period-btn" data-period="yearly" onclick="setKlinePeriod('yearly', this)">年K</button>
+          </div>
+          <div class="range-tabs">
+            <button class="range-btn" data-range="compact" onclick="setKlineRange('compact', this)">近一年</button>
+            <button class="range-btn active" data-range="all" onclick="setKlineRange('all', this)">历史至今</button>
           </div>
         </div>
         <div class="chart-legend" id="growthLegend"></div>
@@ -292,6 +299,8 @@ let state = {
   calcResult: null,
   tableMode: 'base',
   chartMode: 'kline',
+  klinePeriod: 'daily',
+  klineRange: 'all',
 };
 let chartInst = null;
 let klineChart = null;
@@ -552,21 +561,33 @@ function drawLineChart(labels, datasets, yFmt) {
   });
 }
 
-async function loadKline(days = 120, btn = null) {
+function setKlinePeriod(period, btn) {
+  state.klinePeriod = period;
+  document.querySelectorAll('.period-btn').forEach(x => x.classList.remove('active'));
+  btn.classList.add('active');
+  loadKline();
+}
+
+function setKlineRange(range, btn) {
+  state.klineRange = range;
+  document.querySelectorAll('.range-btn').forEach(x => x.classList.remove('active'));
+  btn.classList.add('active');
+  loadKline();
+}
+
+async function loadKline() {
   document.getElementById('lineChartWrap').style.display = 'none';
   document.getElementById('klineContainer').style.display = 'block';
   document.getElementById('klineToolbar').style.display = 'flex';
   document.getElementById('growthLegend').innerHTML = '<div class="loading"><span class="spin"></span>加载 K 线...</div>';
-  if (btn) {
-    document.querySelectorAll('.range-btn').forEach(x => x.classList.remove('active'));
-    btn.classList.add('active');
-  }
   try {
-    const res = await fetch(`${API}/api/kline/${encodeURIComponent(state.selectedCode)}?days=${days}`);
+    const res = await fetch(`${API}/api/kline/${encodeURIComponent(state.selectedCode)}?period=${state.klinePeriod}&range=${state.klineRange}`);
     if (!res.ok) throw new Error('K-line API error');
     const data = await res.json();
     state.klineData = data.klines || [];
-    document.getElementById('klineTitle').textContent = `${data.name || state.selectedCode} 行情`;
+    const periodMap = { daily: '日K', weekly: '周K', monthly: '月K', yearly: '年K' };
+    const rangeMap = { compact: '近一年', all: '历史至今' };
+    document.getElementById('klineTitle').textContent = `${data.name || state.selectedCode} · ${periodMap[state.klinePeriod] || ''} · ${rangeMap[state.klineRange] || ''}`;
     renderKlineChart(state.klineData);
   } catch (e) {
     state.klineData = [];
