@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>定投收益计算器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #161b27;
+    --bg3: #1e2537;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e8eaf0;
+    --text2: #8b92a8;
+    --text3: #545d74;
+    --accent: #4f8ef7;
+    --accent2: #3671d9;
+    --green: #2ecc96;
+    --green2: #1f9e73;
+    --red: #f06060;
+    --amber: #f5a623;
+    --font: 'Noto Sans SC', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+    --radius: 10px;
+    --radius-lg: 14px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; }
+
+  /* ── Layout ── */
+  .app { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 36px; height: 36px; background: var(--accent); border-radius: 9px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .logo-text h1 { font-size: 18px; font-weight: 600; letter-spacing: -.3px; }
+  .logo-text p { font-size: 12px; color: var(--text2); }
+  .main-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+
+  /* ── Panel ── */
+  .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; }
+  .panel-title { font-size: 12px; font-weight: 600; color: var(--text3); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 14px; }
+
+  /* ── Index selector ── */
+  .idx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 16px; }
+  .idx-btn { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; text-align: left; transition: all .15s; }
+  .idx-btn:hover { border-color: var(--border2); }
+  .idx-btn.active { border-color: var(--accent); background: rgba(79,142,247,.12); }
+  .idx-btn .iname { font-size: 13px; font-weight: 500; color: var(--text); }
+  .idx-btn .icode { font-size: 10px; color: var(--text3); font-family: var(--mono); margin-top: 1px; }
+  .idx-btn .mkt { font-size: 10px; padding: 1px 5px; border-radius: 4px; display: inline-block; margin-top: 2px; }
+  .mkt-a { background: rgba(79,142,247,.15); color: var(--accent); }
+  .mkt-hk { background: rgba(245,166,35,.12); color: var(--amber); }
+  .mkt-us { background: rgba(46,204,150,.12); color: var(--green); }
+
+  /* ── Form ── */
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 5px; }
+  .field input, .field select {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-size: 14px; font-family: var(--font); padding: 9px 12px; outline: none;
+    transition: border-color .15s;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field select option { background: var(--bg3); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  /* ── PE badge ── */
+  .pe-info { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; }
+  .pe-info .pe-row { display: flex; align-items: center; justify-content: space-between; }
+  .pe-info .pe-val { font-size: 22px; font-weight: 600; font-family: var(--mono); color: var(--text); }
+  .pe-info .pe-label { font-size: 11px; color: var(--text3); }
+  .pe-info .pe-sub { display: flex; gap: 12px; margin-top: 6px; }
+  .pe-info .pe-sub span { font-size: 11px; color: var(--text2); }
+  .pe-info .pe-src { font-size: 10px; color: var(--text3); margin-top: 4px; font-family: var(--mono); }
+  .pe-info .percentile-bar { height: 4px; background: var(--bg); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .pe-info .percentile-fill { height: 100%; border-radius: 2px; transition: width .4s; }
+  .pe-loading { color: var(--text3); font-size: 12px; padding: 8px 0; display: flex; align-items: center; gap: 6px; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 1.5px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Return rates ── */
+  .rate-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 14px; }
+  .rate-table td { padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .rate-table td:last-child { text-align: right; font-family: var(--mono); font-weight: 500; }
+  .rate-bull { color: var(--green); }
+  .rate-base { color: var(--accent); }
+  .rate-bear { color: var(--red); }
+
+  /* ── Calc button ── */
+  .calc-btn {
+    width: 100%; background: var(--accent); color: #fff; border: none; border-radius: 9px;
+    padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background .15s;
+    font-family: var(--font); letter-spacing: .02em;
+  }
+  .calc-btn:hover { background: var(--accent2); }
+  .calc-btn:disabled { background: var(--bg3); color: var(--text3); cursor: not-allowed; }
+
+  /* ── Right panel ── */
+  .right-col { display: flex; flex-direction: column; gap: 14px; }
+
+  /* ── Stat cards ── */
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .stat-card .sc-yr { font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+  .stat-card .sc-val { font-size: 22px; font-weight: 600; font-family: var(--mono); color: var(--text); }
+  .stat-card .sc-invested { font-size: 11px; color: var(--text3); margin-top: 2px; }
+  .stat-card .sc-ret { font-size: 13px; font-weight: 500; color: var(--green); margin-top: 4px; }
+  .stat-card .sc-sub { font-size: 11px; color: var(--text2); margin-top: 1px; }
+
+  /* ── Charts ── */
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+  .tab { padding: 5px 14px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; background: transparent; color: var(--text2); font-family: var(--font); transition: all .15s; }
+  .tab.active { background: var(--bg3); border-color: var(--border2); color: var(--text); }
+  .chart-legend { display: flex; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
+  .leg { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); }
+  .leg-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  canvas { display: block; }
+  .chart-wrap { position: relative; width: 100%; }
+
+  /* ── Data table ── */
+  .tbl-wrap { overflow-x: auto; max-height: 320px; overflow-y: auto; }
+  .tbl-wrap::-webkit-scrollbar { width: 4px; height: 4px; }
+  .tbl-wrap::-webkit-scrollbar-track { background: var(--bg); }
+  .tbl-wrap::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.data th { text-align: right; padding: 7px 10px; color: var(--text3); border-bottom: 1px solid var(--border); font-weight: 500; position: sticky; top: 0; background: var(--bg2); z-index: 2; white-space: nowrap; }
+  table.data th:first-child { text-align: left; }
+  table.data td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--text2); white-space: nowrap; }
+  table.data td:first-child { text-align: left; font-family: var(--font); color: var(--text3); }
+  table.data tr.hl td { background: rgba(79,142,247,.06); color: var(--text); }
+  table.data td.pos { color: var(--green); }
+
+  /* ── Export bar ── */
+  .export-bar { display: flex; gap: 8px; }
+  .export-btn {
+    flex: 1; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg3);
+    color: var(--text2); font-size: 12px; cursor: pointer; font-family: var(--font); transition: all .15s;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .export-btn:hover { border-color: var(--border2); color: var(--text); }
+  .export-btn.primary { background: rgba(79,142,247,.12); border-color: var(--accent); color: var(--accent); }
+  .export-btn.primary:hover { background: rgba(79,142,247,.2); }
+
+  /* ── PE history chart ── */
+  .pe-hist-badge { font-size: 11px; color: var(--text3); margin-bottom: 8px; }
+
+  /* ── Toast ── */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 9px; padding: 10px 16px; font-size: 13px; color: var(--text); opacity: 0; transform: translateY(10px); transition: all .25s; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ── Empty state ── */
+  .empty { text-align: center; padding: 40px 20px; color: var(--text3); font-size: 13px; }
+  .empty .empty-icon { font-size: 32px; margin-bottom: 10px; }
+
+  @media (max-width: 800px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .stat-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <div class="logo">
+      <div class="logo-icon">📈</div>
+      <div class="logo-text">
+        <h1>定投收益计算器</h1>
+        <p>基于市盈率 · 实时行情 · 长期复利模拟</p>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text3);font-family:var(--mono)" id="updateTime"></div>
+  </header>
+
+  <div class="main-grid">
+
+    <!-- ── 左侧控制面板 ── -->
+    <div>
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">选择指数 / 基金</div>
+        <div class="idx-grid" id="idxGrid"></div>
+
+        <div class="field">
+          <label>自定义代码（如 000300、SPX）</label>
+          <input id="customCode" type="text" placeholder="输入后按回车查询" />
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">市盈率 (PE)</div>
+        <div id="peBlock">
+          <div class="pe-loading"><span class="spin"></span> 加载中...</div>
+        </div>
+
+        <table class="rate-table" id="rateTable" style="display:none">
+          <tr><td style="color:var(--text2)">悲观年化回报</td><td class="rate-bear" id="rateBear">—</td></tr>
+          <tr><td style="color:var(--text2)">基准年化回报</td><td class="rate-base" id="rateBase">—</td></tr>
+          <tr><td style="color:var(--text2)">乐观年化回报</td><td class="rate-bull" id="rateBull">—</td></tr>
+        </table>
+      </div>
+
+      <div class="panel" style="margin-bottom:14px">
+        <div class="panel-title">定投参数</div>
+        <div class="field">
+          <label>每期定投金额（元）</label>
+          <input id="amount" type="number" value="2000" min="100" step="100" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>定投频率</label>
+            <select id="freq">
+              <option value="12">每月一次</option>
+              <option value="52">每周一次</option>
+              <option value="250">每交易日</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>手动PE（可覆盖）</label>
+            <input id="manualPE" type="number" placeholder="留空用实时" min="1" max="200" step="0.1" />
+          </div>
+        </div>
+      </div>
+
+      <button class="calc-btn" id="calcBtn" onclick="runCalc()">计算收益预测</button>
+    </div>
+
+    <!-- ── 右侧结果区 ── -->
+    <div class="right-col">
+
+      <!-- 汇总卡片 -->
+      <div class="stat-grid" id="statCards">
+        <div class="stat-card" style="grid-column:1/-1">
+          <div class="empty">
+            <div class="empty-icon">💡</div>
+            选择指数并点击「计算收益预测」查看结果
+          </div>
+        </div>
+      </div>
+
+      <!-- 收益曲线 -->
+      <div class="panel" id="chartPanel" style="display:none">
+        <div class="panel-title">收益增长曲线</div>
+        <div class="tabs">
+          <button class="tab active" onclick="switchChart('growth')">组合价值</button>
+          <button class="tab" onclick="switchChart('peHistory')">PE历史走势</button>
+        </div>
+        <div class="chart-legend" id="growthLegend"></div>
+        <div class="chart-wrap" style="height:260px">
+          <canvas id="mainChart" role="img" aria-label="定投收益增长曲线图"></canvas>
+        </div>
+      </div>
+
+      <!-- 年度明细 -->
+      <div class="panel" id="tablePanel" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div class="panel-title" style="margin:0">年度明细</div>
+          <div class="tabs" style="margin:0">
+            <button class="tab active" onclick="switchTable('base')" id="tbase">基准</button>
+            <button class="tab" onclick="switchTable('bull')" id="tbull">乐观</button>
+            <button class="tab" onclick="switchTable('bear')" id="tbear">悲观</button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th style="text-align:left">年份</th>
+                <th>累计投入</th>
+                <th>组合价值</th>
+                <th>收益额</th>
+                <th>总收益率</th>
+                <th>年化回报</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 导出 -->
+      <div class="panel" id="exportPanel" style="display:none">
+        <div class="panel-title">导出报告</div>
+        <div class="export-bar">
+          <button class="export-btn primary" onclick="exportExcel()">⬇ 导出 Excel（含三种情景）</button>
+          <button class="export-btn" onclick="exportCSV()">⬇ 导出 CSV</button>
+          <button class="export-btn" onclick="printPage()">🖨 打印 / PDF</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ─── Scripts ─── -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ── Config ──────────────────────────────────────────────────────
+const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8000'
+  : 'https://dca-calculator-production.up.railway.app';
+
+// ── State ──────────────────────────────────────────────────────
+let state = {
+  selectedCode: '000300',
+  peData: null,
+  peHistory: [],
+  calcResult: null,
+  tableMode: 'base',
+  chartMode: 'growth',
+};
+let chartInst = null;
+
+// ── Helpers ────────────────────────────────────────────────────
+const fmt  = n => '¥' + Math.round(n).toLocaleString('zh-CN');
+const fmtP = r => (r * 100).toFixed(1) + '%';
+const fmtN = n => Math.round(n).toLocaleString('zh-CN');
+
+function toast(msg, dur=2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), dur);
+}
+
+// ── Rate calculation ────────────────────────────────────────────
+function getRates(pe, earningsGrowth) {
+  const ey = 1 / pe;  // earnings yield
+  const g  = (earningsGrowth || 6) / 100;
+  return {
+    bear: Math.max(ey * 0.65, 0.03),
+    base: ey + g * 0.5,
+    bull: ey + g,
+  };
+}
+
+// ── DCA calculation ─────────────────────────────────────────────
+function calcDCA(annualRate, periodicAmt, freq) {
+  const r = (1 + annualRate) ** (1 / freq) - 1;
+  return Array.from({ length: 30 }, (_, i) => {
+    const yr = i + 1;
+    const n  = yr * freq;
+    const fv = periodicAmt * ((1 + r) ** n - 1) / r * (1 + r);
+    const invested = periodicAmt * n;
+    const gain     = fv - invested;
+    return {
+      yr, fv: Math.round(fv), invested: Math.round(invested),
+      gain: Math.round(gain), gainPct: gain / invested,
+      annualEff: (fv / invested) ** (1 / yr) - 1,
+    };
+  });
+}
+
+// ── Fetch PE from backend ───────────────────────────────────────
+async function fetchPE(code) {
+  document.getElementById('peBlock').innerHTML = `<div class="pe-loading"><span class="spin"></span> 正在获取实时数据...</div>`;
+  document.getElementById('rateTable').style.display = 'none';
+  try {
+    const res = await fetch(`${API}/api/pe/${code}`);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    state.peData = data;
+    renderPEBlock(data);
+    // 并行获取PE历史
+    fetchPEHistory(code);
+    return data;
+  } catch (e) {
+    // 降级到默认值
+    const fallback = PRESETS.find(p => p.code === code) || PRESETS[0];
+    state.peData = {
+      code, name: fallback.name, market: fallback.market,
+      pe: fallback.default_pe, earnings_growth: fallback.earnings_growth,
+      source: '离线默认值', updated_at: '—',
+    };
+    renderPEBlock(state.peData);
+    toast('⚠ 无法连接后端，使用默认PE值');
+    return state.peData;
+  }
+}
+
+async function fetchPEHistory(code) {
+  try {
+    const res = await fetch(`${API}/api/pe/${code}/history?years=10`);
+    if (!res.ok) return;
+    const data = await res.json();
+    state.peHistory = data.history || [];
+  } catch (e) {
+    state.peHistory = [];
+  }
+}
+
+// ── Render PE block ─────────────────────────────────────────────
+function renderPEBlock(data) {
+  const manualPE = parseFloat(document.getElementById('manualPE').value);
+  const pe = !isNaN(manualPE) && manualPE > 0 ? manualPE : data.pe;
+  const g  = data.earnings_growth || 6;
+  const rates = getRates(pe, g);
+
+  // Percentile color
+  const pct = data.pe_percentile;
+  const pctColor = pct < 30 ? '#2ecc96' : pct > 70 ? '#f06060' : '#f5a623';
+  const pctLabel = pct < 30 ? '低估区间 ✓' : pct > 70 ? '高估区间 ↑' : '合理区间';
+
+  document.getElementById('peBlock').innerHTML = `
+    <div class="pe-info">
+      <div class="pe-row">
+        <div>
+          <div class="pe-label">当前市盈率 (PE-TTM)</div>
+          <div class="pe-val">${pe.toFixed(2)}</div>
+        </div>
+        <div style="text-align:right">
+          ${data.pb ? `<div class="pe-label">市净率 (PB)</div><div style="font-size:16px;font-family:var(--mono);font-weight:600;color:var(--text)">${data.pb}</div>` : ''}
+        </div>
+      </div>
+      ${pct !== null && pct !== undefined ? `
+      <div class="pe-sub"><span>10年分位: ${pct}%</span><span style="color:${pctColor}">${pctLabel}</span></div>
+      <div class="percentile-bar"><div class="percentile-fill" style="width:${pct}%;background:${pctColor}"></div></div>
+      ` : ''}
+      <div class="pe-src">来源: ${data.source} · ${data.updated_at}</div>
+    </div>
+  `;
+
+  document.getElementById('rateTable').style.display = 'table';
+  document.getElementById('rateBear').textContent = fmtP(rates.bear);
+  document.getElementById('rateBase').textContent = fmtP(rates.base);
+  document.getElementById('rateBull').textContent = fmtP(rates.bull);
+}
+
+// ── Run calculation ─────────────────────────────────────────────
+function runCalc() {
+  if (!state.peData) return toast('请先选择指数');
+  const amount = parseFloat(document.getElementById('amount').value) || 2000;
+  const freq   = parseInt(document.getElementById('freq').value) || 12;
+  const manualPE = parseFloat(document.getElementById('manualPE').value);
+  const pe = !isNaN(manualPE) && manualPE > 0 ? manualPE : state.peData.pe;
+  const g  = state.peData.earnings_growth || 6;
+  const rates = getRates(pe, g);
+
+  const bear = calcDCA(rates.bear, amount, freq);
+  const base = calcDCA(rates.base, amount, freq);
+  const bull = calcDCA(rates.bull, amount, freq);
+
+  state.calcResult = { bear, base, bull, rates, amount, freq, pe, g };
+
+  renderStatCards(base, bull, bear);
+  renderChart();
+  renderTable('base');
+
+  document.getElementById('chartPanel').style.display = 'block';
+  document.getElementById('tablePanel').style.display = 'block';
+  document.getElementById('exportPanel').style.display = 'block';
+}
+
+// ── Stat cards ──────────────────────────────────────────────────
+function renderStatCards(base, bull, bear) {
+  const yrs = [10, 20, 30];
+  document.getElementById('statCards').innerHTML = yrs.map(y => {
+    const d = base[y - 1];
+    const b = bull[y - 1];
+    return `
+      <div class="stat-card">
+        <div class="sc-yr">${y} 年后（基准）</div>
+        <div class="sc-val">${fmt(d.fv)}</div>
+        <div class="sc-invested">投入 ${fmt(d.invested)}</div>
+        <div class="sc-ret">+${fmtP(d.gainPct)} 总回报</div>
+        <div class="sc-sub">乐观: ${fmt(b.fv)}</div>
+      </div>`;
+  }).join('');
+}
+
+// ── Chart ───────────────────────────────────────────────────────
+function renderChart() {
+  if (!state.calcResult) return;
+  const { bear, base, bull } = state.calcResult;
+  const labels = Array.from({ length: 30 }, (_, i) => `${i + 1}年`);
+
+  if (state.chartMode === 'growth') {
+    renderGrowthChart(labels, base, bull, bear);
+  } else {
+    renderPEHistChart();
+  }
+}
+
+function renderGrowthChart(labels, base, bull, bear) {
+  document.getElementById('growthLegend').innerHTML = [
+    { c: '#2ecc96', l: '乐观' }, { c: '#4f8ef7', l: '基准' },
+    { c: '#f06060', l: '悲观' }, { c: '#545d74', l: '累计投入' },
+  ].map(x => `<span class="leg"><span class="leg-dot" style="background:${x.c}"></span>${x.l}</span>`).join('');
+
+  const datasets = [
+    { label: '乐观', data: bull.map(d => d.fv), borderColor: '#2ecc96', borderWidth: 2, pointRadius: 0, fill: false, tension: 0.3 },
+    { label: '基准', data: base.map(d => d.fv), borderColor: '#4f8ef7', borderWidth: 2.5, pointRadius: 0, fill: false, tension: 0.3 },
+    { label: '悲观', data: bear.map(d => d.fv), borderColor: '#f06060', borderWidth: 2, pointRadius: 0, fill: false, borderDash: [4,3], tension: 0.3 },
+    { label: '累计投入', data: base.map(d => d.invested), borderColor: '#545d74', borderWidth: 1.5, pointRadius: 0, fill: false, borderDash: [2,2], tension: 0 },
+  ];
+  drawChart(labels, datasets, v => v >= 1e8 ? '¥'+(v/1e8).toFixed(1)+'亿' : v >= 1e4 ? '¥'+(v/1e4).toFixed(0)+'万' : '¥'+v);
+}
+
+function renderPEHistChart() {
+  document.getElementById('growthLegend').innerHTML = `<span class="leg"><span class="leg-dot" style="background:#f5a623"></span>PE历史（月度）</span>`;
+  if (!state.peHistory || state.peHistory.length === 0) {
+    document.getElementById('mainChart').parentElement.innerHTML = `<div class="empty" style="height:200px;display:flex;align-items:center;justify-content:center"><div><div class="empty-icon">📉</div>暂无历史PE数据</div></div>`;
+    return;
+  }
+  const labels = state.peHistory.map(d => d.date.slice(0,7));
+  const datasets = [{ label: 'PE', data: state.peHistory.map(d => d.pe), borderColor: '#f5a623', borderWidth: 2, pointRadius: 0, fill: false, tension: 0.3 }];
+  drawChart(labels, datasets, v => v.toFixed(1));
+}
+
+function drawChart(labels, datasets, yFmt) {
+  const canvas = document.getElementById('mainChart');
+  if (chartInst) chartInst.destroy();
+  chartInst = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e2537', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1,
+          titleColor: '#8b92a8', bodyColor: '#e8eaf0', padding: 10,
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${typeof ctx.parsed.y === 'number' && ctx.parsed.y > 1000 ? fmt(ctx.parsed.y) : ctx.parsed.y}`,
+          }
+        }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#545d74', font: { size: 11 }, maxTicksLimit: 10 } },
+        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#545d74', font: { size: 11 }, callback: yFmt } }
+      }
+    }
+  });
+}
+
+function switchChart(mode) {
+  state.chartMode = mode;
+  document.querySelectorAll('.tabs .tab').forEach((btn, i) => {
+    btn.classList.toggle('active', ['growth', 'peHistory'][i] === mode);
+  });
+  renderChart();
+}
+
+// ── Table ───────────────────────────────────────────────────────
+function renderTable(mode) {
+  state.tableMode = mode;
+  ['base','bull','bear'].forEach(m => document.getElementById('t'+m).classList.toggle('active', m===mode));
+  if (!state.calcResult) return;
+  const data = state.calcResult[mode];
+  const hl = new Set([9,19,29]);
+  document.getElementById('tableBody').innerHTML = data.map((d,i) => `
+    <tr class="${hl.has(i)?'hl':''}">
+      <td>第 ${d.yr} 年</td>
+      <td>${fmtN(d.invested)}</td>
+      <td>${fmtN(d.fv)}</td>
+      <td class="pos">+${fmtN(d.gain)}</td>
+      <td class="pos">+${fmtP(d.gainPct)}</td>
+      <td>${fmtP(d.annualEff)}</td>
+    </tr>`).join('');
+}
+function switchTable(mode) { renderTable(mode); }
+
+// ── Export ──────────────────────────────────────────────────────
+async function exportExcel() {
+  if (!state.calcResult) return toast('请先计算');
+  const { bear, base, bull, rates, amount, freq, pe } = state.calcResult;
+  const freqName = { 12:'月', 52:'周', 250:'交易日' }[freq] || '期';
+  const name = state.peData?.name || state.selectedCode;
+  const code = state.selectedCode;
+
+  // Try backend export first (prettier)
+  try {
+    const params = new URLSearchParams({
+      code, name, pe, monthly_amount: amount, freq,
+      bear_rate: rates.bear, base_rate: rates.base, bull_rate: rates.bull,
+    });
+    const res = await fetch(`${API}/api/export/excel?${params}`);
+    if (res.ok) {
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `定投收益_${name}_${new Date().toISOString().slice(0,10)}.xlsx`;
+      a.click(); URL.revokeObjectURL(url);
+      toast('✅ Excel 已导出');
+      return;
+    }
+  } catch (e) {}
+
+  // Client-side fallback using SheetJS
+  const wb = XLSX.utils.book_new();
+  const paramData = [
+    ['参数','值'],
+    ['基金/指数', `${name}（${code}）`],
+    ['当前PE', pe],
+    ['每期定投', `¥${amount}`],
+    ['定投频率', `每${freqName}一次`],
+    ['悲观年化', (rates.bear*100).toFixed(2)+'%'],
+    ['基准年化', (rates.base*100).toFixed(2)+'%'],
+    ['乐观年化', (rates.bull*100).toFixed(2)+'%'],
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(paramData), '参数设置');
+
+  [['基准情景',base],['乐观情景',bull],['悲观情景',bear]].forEach(([sname,data]) => {
+    const rows = [['年份','累计投入','组合价值','收益额','总收益率','年化回报']];
+    data.forEach(d => rows.push([`第${d.yr}年`, d.invested, d.fv, d.gain, fmtP(d.gainPct), fmtP(d.annualEff)]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sname);
+  });
+
+  XLSX.writeFile(wb, `定投收益_${name}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast('✅ Excel 已导出（客户端生成）');
+}
+
+function exportCSV() {
+  if (!state.calcResult) return toast('请先计算');
+  const { base, bull, bear } = state.calcResult;
+  const rows = ['年份,情景,累计投入,组合价值,收益额,总收益率,年化回报'];
+  [['基准',base],['乐观',bull],['悲观',bear]].forEach(([s,data]) =>
+    data.forEach(d => rows.push([`第${d.yr}年`,s,d.invested,d.fv,d.gain,fmtP(d.gainPct),fmtP(d.annualEff)].join(',')))
+  );
+  const blob = new Blob(['\ufeff'+rows.join('\n')], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `定投收益_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  toast('✅ CSV 已导出');
+}
+
+function printPage() { window.print(); }
+
+// ── Index selector ──────────────────────────────────────────────
+const PRESETS = [
+  { code:'000300', name:'沪深300', market:'A股', default_pe:13, earnings_growth:6 },
+  { code:'000016', name:'上证50',  market:'A股', default_pe:11, earnings_growth:5 },
+  { code:'000905', name:'中证500', market:'A股', default_pe:20, earnings_growth:7 },
+  { code:'399006', name:'创业板指',market:'A股', default_pe:30, earnings_growth:10},
+  { code:'HSI',    name:'恒生指数',market:'港股', default_pe:10, earnings_growth:5 },
+  { code:'SPX',    name:'标普500', market:'美股', default_pe:22, earnings_growth:7 },
+  { code:'NDX',    name:'纳斯达克',market:'美股', default_pe:28, earnings_growth:10},
+  { code:'000001', name:'上证综指',market:'A股', default_pe:14, earnings_growth:6 },
+];
+
+const mktClass = { 'A股':'mkt-a', '港股':'mkt-hk', '美股':'mkt-us' };
+
+function renderPresets() {
+  document.getElementById('idxGrid').innerHTML = PRESETS.map(p => `
+    <button class="idx-btn${p.code===state.selectedCode?' active':''}" onclick="selectIndex('${p.code}')">
+      <div class="iname">${p.name}</div>
+      <div class="icode">${p.code}</div>
+      <span class="mkt ${mktClass[p.market]||''}">${p.market}</span>
+    </button>`).join('');
+}
+
+async function selectIndex(code) {
+  state.selectedCode = code;
+  renderPresets();
+  await fetchPE(code);
+}
+
+// ── Custom code input ───────────────────────────────────────────
+document.getElementById('customCode').addEventListener('keydown', async e => {
+  if (e.key === 'Enter') {
+    const code = e.target.value.trim().toUpperCase();
+    if (!code) return;
+    state.selectedCode = code;
+    // Deselect preset buttons
+    document.querySelectorAll('.idx-btn').forEach(b => b.classList.remove('active'));
+    await fetchPE(code);
+  }
+});
+
+// Manual PE override
+document.getElementById('manualPE').addEventListener('input', () => {
+  if (state.peData) renderPEBlock(state.peData);
+});
+
+// ── Init ────────────────────────────────────────────────────────
+document.getElementById('updateTime').textContent = new Date().toLocaleString('zh-CN');
+renderPresets();
+fetchPE('000300');
+</script>
+</body>
+</html>

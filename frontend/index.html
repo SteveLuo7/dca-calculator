@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>定投收益计算器</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #161b27;
+    --bg3: #1e2537;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.14);
+    --text: #e8eaf0;
+    --text2: #9aa2b8;
+    --text3: #5d667d;
+    --accent: #4f8ef7;
+    --accent2: #3671d9;
+    --green: #2ecc96;
+    --red: #f06060;
+    --amber: #f5a623;
+    --font: 'Noto Sans SC', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { min-height: 100vh; background: var(--bg); color: var(--text); font-family: var(--font); }
+  button, input, select { font: inherit; }
+  .app { max-width: 1180px; margin: 0 auto; padding: 24px 20px 40px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; gap: 16px; }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 36px; height: 36px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; font-weight: 700; }
+  h1 { font-size: 18px; font-weight: 600; }
+  .subtitle { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .updated { color: var(--text3); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+  .main-grid { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+  .left-col, .right-col { display: flex; flex-direction: column; gap: 14px; }
+  .panel, .stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); }
+  .panel { padding: 18px; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .panel-title { color: var(--text3); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+  .idx-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 14px; }
+  .idx-btn { text-align: left; background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; transition: .15s; min-height: 68px; }
+  .idx-btn:hover { border-color: var(--border2); }
+  .idx-btn.active { border-color: var(--accent); background: rgba(79,142,247,.12); }
+  .iname { font-size: 13px; font-weight: 500; }
+  .icode { color: var(--text3); font-family: var(--mono); font-size: 10px; margin-top: 1px; }
+  .mkt { display: inline-block; margin-top: 4px; padding: 1px 5px; border-radius: 4px; font-size: 10px; }
+  .mkt-a { background: rgba(79,142,247,.15); color: var(--accent); }
+  .mkt-hk { background: rgba(245,166,35,.12); color: var(--amber); }
+  .mkt-us { background: rgba(46,204,150,.12); color: var(--green); }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; margin-bottom: 5px; color: var(--text2); font-size: 12px; }
+  input, select { width: 100%; background: var(--bg3); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; outline: none; }
+  input:focus, select:focus { border-color: var(--accent); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pe-info { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 11px 12px; }
+  .pe-row { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+  .pe-label { color: var(--text3); font-size: 11px; }
+  .pe-val { font-family: var(--mono); font-size: 24px; font-weight: 600; margin-top: 2px; }
+  .pe-sub { display: flex; gap: 12px; color: var(--text2); font-size: 11px; margin-top: 8px; flex-wrap: wrap; }
+  .pe-src { color: var(--text3); font-family: var(--mono); font-size: 10px; margin-top: 6px; }
+  .percentile-bar { height: 4px; background: var(--bg); border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .percentile-fill { height: 100%; border-radius: 3px; }
+  .loading { color: var(--text3); font-size: 12px; padding: 10px 0; display: flex; align-items: center; gap: 7px; }
+  .spin { width: 13px; height: 13px; border: 1.5px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .rate-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 12px; }
+  .rate-table td { padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .rate-table td:last-child { text-align: right; font-family: var(--mono); font-weight: 500; }
+  .rate-bear { color: var(--red); }
+  .rate-base { color: var(--accent); }
+  .rate-bull { color: var(--green); }
+  .calc-btn { width: 100%; color: #fff; background: var(--accent); border: 0; border-radius: 8px; padding: 12px; font-weight: 600; cursor: pointer; transition: .15s; }
+  .calc-btn:hover { background: var(--accent2); }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .stat-card { padding: 14px 16px; min-height: 108px; }
+  .sc-yr { color: var(--text3); font-size: 11px; margin-bottom: 5px; }
+  .sc-val { font-family: var(--mono); font-size: 22px; font-weight: 600; }
+  .sc-invested, .sc-sub { color: var(--text3); font-size: 11px; margin-top: 3px; }
+  .sc-ret { color: var(--green); font-size: 13px; font-weight: 500; margin-top: 5px; }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .tab { border: 1px solid var(--border); background: transparent; color: var(--text2); border-radius: 6px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+  .tab.active { background: var(--bg3); border-color: var(--border2); color: var(--text); }
+  .chart-legend { display: flex; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
+  .leg { display: flex; align-items: center; gap: 5px; color: var(--text2); font-size: 11px; }
+  .leg-dot { width: 10px; height: 10px; border-radius: 2px; }
+  .chart-wrap { position: relative; height: 280px; width: 100%; }
+  .kline-wrap { display: none; height: 360px; }
+  #klineChart { height: 260px; border-bottom: 1px solid var(--border); }
+  #volumeChart { height: 96px; }
+  .range-tabs { display: flex; gap: 4px; }
+  .range-btn { padding: 4px 8px; font-size: 11px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--text2); cursor: pointer; }
+  .range-btn.active { color: var(--text); background: var(--bg3); border-color: var(--border2); }
+  .tbl-wrap { overflow: auto; max-height: 320px; }
+  table.data { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.data th, table.data td { white-space: nowrap; border-bottom: 1px solid var(--border); padding: 7px 10px; text-align: right; }
+  table.data th { position: sticky; top: 0; z-index: 2; background: var(--bg2); color: var(--text3); font-weight: 500; }
+  table.data th:first-child, table.data td:first-child { text-align: left; }
+  table.data td { color: var(--text2); font-family: var(--mono); font-size: 11px; }
+  table.data tr.hl td { background: rgba(79,142,247,.06); color: var(--text); }
+  .pos { color: var(--green) !important; }
+  .export-bar { display: flex; gap: 8px; }
+  .export-btn { flex: 1; border: 1px solid var(--border); background: var(--bg3); color: var(--text2); border-radius: 8px; padding: 9px 12px; cursor: pointer; font-size: 12px; }
+  .export-btn.primary { border-color: var(--accent); color: var(--accent); background: rgba(79,142,247,.12); }
+  .news-list { display: grid; gap: 8px; }
+  .news-item { display: block; text-decoration: none; color: inherit; border: 1px solid var(--border); background: var(--bg3); border-radius: 8px; padding: 10px 12px; transition: .15s; }
+  .news-item:hover { border-color: var(--border2); transform: translateY(-1px); }
+  .news-title { font-size: 13px; line-height: 1.45; }
+  .news-meta { color: var(--text3); font-size: 11px; margin-top: 5px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .news-summary { color: var(--text2); font-size: 12px; line-height: 1.45; margin-top: 6px; }
+  .empty { color: var(--text3); text-align: center; padding: 34px 18px; font-size: 13px; }
+  .toast { position: fixed; right: 24px; bottom: 24px; z-index: 99; opacity: 0; pointer-events: none; transform: translateY(10px); transition: .25s; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  @media (max-width: 860px) {
+    .main-grid { grid-template-columns: 1fr; }
+    .stat-grid { grid-template-columns: 1fr; }
+    header { align-items: flex-start; flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">
+      <div class="logo-icon">DCA</div>
+      <div>
+        <h1>定投收益计算器</h1>
+        <div class="subtitle">PE 估值 · K 线行情 · 股票新闻 · 长期复利模拟</div>
+      </div>
+    </div>
+    <div class="updated" id="updateTime"></div>
+  </header>
+
+  <div class="main-grid">
+    <div class="left-col">
+      <section class="panel">
+        <div class="panel-title">选择指数 / 股票</div>
+        <div class="idx-grid" id="idxGrid"></div>
+        <div class="field" style="margin-bottom:0">
+          <label>自定义代码，例如 000300、600519、SPX</label>
+          <input id="customCode" type="text" placeholder="输入后按回车查询" />
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">市盈率 PE</div>
+        <div id="peBlock"><div class="loading"><span class="spin"></span>加载中...</div></div>
+        <table class="rate-table" id="rateTable" style="display:none">
+          <tr><td style="color:var(--text2)">悲观年化回报</td><td class="rate-bear" id="rateBear">-</td></tr>
+          <tr><td style="color:var(--text2)">基准年化回报</td><td class="rate-base" id="rateBase">-</td></tr>
+          <tr><td style="color:var(--text2)">乐观年化回报</td><td class="rate-bull" id="rateBull">-</td></tr>
+        </table>
+      </section>
+
+      <section class="panel">
+        <div class="panel-title">定投参数</div>
+        <div class="field">
+          <label>每期定投金额（元）</label>
+          <input id="amount" type="number" value="2000" min="100" step="100" />
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label>定投频率</label>
+            <select id="freq">
+              <option value="12">每月一次</option>
+              <option value="52">每周一次</option>
+              <option value="250">每个交易日</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>手动 PE 覆盖</label>
+            <input id="manualPE" type="number" placeholder="留空用实时值" min="1" max="200" step="0.1" />
+          </div>
+        </div>
+      </section>
+
+      <button class="calc-btn" id="calcBtn" onclick="runCalc()">计算收益预测</button>
+    </div>
+
+    <div class="right-col">
+      <div class="stat-grid" id="statCards">
+        <div class="stat-card" style="grid-column:1/-1">
+          <div class="empty">选择指数或股票后，点击“计算收益预测”查看结果。</div>
+        </div>
+      </div>
+
+      <section class="panel" id="chartPanel">
+        <div class="panel-head">
+          <div class="panel-title">图表</div>
+          <div class="tabs" id="chartTabs">
+            <button class="tab" onclick="switchChart('growth')">收益曲线</button>
+            <button class="tab" onclick="switchChart('peHistory')">PE 历史</button>
+            <button class="tab active" onclick="switchChart('kline')">K 线</button>
+          </div>
+        </div>
+        <div class="panel-head" id="klineToolbar" style="display:none;margin-bottom:10px">
+          <div class="panel-title" id="klineTitle">行情</div>
+          <div class="range-tabs">
+            <button class="range-btn active" onclick="loadKline(120, this)">半年</button>
+            <button class="range-btn" onclick="loadKline(250, this)">一年</button>
+            <button class="range-btn" onclick="loadKline(500, this)">两年</button>
+          </div>
+        </div>
+        <div class="chart-legend" id="growthLegend"></div>
+        <div class="chart-wrap" id="lineChartWrap">
+          <canvas id="mainChart" role="img" aria-label="定投收益或PE历史图"></canvas>
+        </div>
+        <div class="kline-wrap" id="klineContainer">
+          <div id="klineChart"></div>
+          <div id="volumeChart"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="tablePanel" style="display:none">
+        <div class="panel-head">
+          <div class="panel-title">年度明细</div>
+          <div class="tabs">
+            <button class="tab active" onclick="switchTable('base')" id="tbase">基准</button>
+            <button class="tab" onclick="switchTable('bull')" id="tbull">乐观</button>
+            <button class="tab" onclick="switchTable('bear')" id="tbear">悲观</button>
+          </div>
+        </div>
+        <div class="tbl-wrap">
+          <table class="data">
+            <thead>
+              <tr>
+                <th>年份</th>
+                <th>累计投入</th>
+                <th>组合价值</th>
+                <th>收益额</th>
+                <th>总收益率</th>
+                <th>年化回报</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel" id="newsPanel">
+        <div class="panel-head">
+          <div class="panel-title">相关新闻</div>
+          <div class="updated" id="newsUpdated"></div>
+        </div>
+        <div id="newsList"><div class="loading"><span class="spin"></span>加载新闻...</div></div>
+      </section>
+
+      <section class="panel" id="exportPanel" style="display:none">
+        <div class="panel-title" style="margin-bottom:12px">导出报告</div>
+        <div class="export-bar">
+          <button class="export-btn primary" onclick="exportExcel()">导出 Excel</button>
+          <button class="export-btn" onclick="exportCSV()">导出 CSV</button>
+          <button class="export-btn" onclick="printPage()">打印 / PDF</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+const API = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+  ? 'http://localhost:8000'
+  : 'https://dca-calculator-production.up.railway.app';
+
+const PRESETS = [
+  { code:'000300', name:'沪深300', market:'A股', default_pe:13, earnings_growth:6 },
+  { code:'000016', name:'上证50', market:'A股', default_pe:11, earnings_growth:5 },
+  { code:'000905', name:'中证500', market:'A股', default_pe:20, earnings_growth:7 },
+  { code:'000852', name:'中证1000', market:'A股', default_pe:25, earnings_growth:8 },
+  { code:'399006', name:'创业板指', market:'A股', default_pe:30, earnings_growth:10 },
+  { code:'000001', name:'上证综指', market:'A股', default_pe:14, earnings_growth:6 },
+  { code:'HSI', name:'恒生指数', market:'港股', default_pe:10, earnings_growth:5 },
+  { code:'SPX', name:'标普500', market:'美股', default_pe:22, earnings_growth:7 },
+];
+const mktClass = { 'A股':'mkt-a', '港股':'mkt-hk', '美股':'mkt-us' };
+const fmt = n => '¥' + Math.round(n).toLocaleString('zh-CN');
+const fmtP = r => (r * 100).toFixed(1) + '%';
+const fmtN = n => Math.round(n).toLocaleString('zh-CN');
+
+let state = {
+  selectedCode: '000300',
+  peData: null,
+  peHistory: [],
+  klineData: [],
+  calcResult: null,
+  tableMode: 'base',
+  chartMode: 'kline',
+};
+let chartInst = null;
+let klineChart = null;
+let volumeChart = null;
+
+function toast(msg, dur=2600) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), dur);
+}
+
+function normalizeCode(code) {
+  const trimmed = String(code || '').trim().toUpperCase();
+  return /^\d{1,5}$/.test(trimmed) ? trimmed.padStart(6, '0') : trimmed;
+}
+
+function getRates(pe, earningsGrowth) {
+  const ey = 1 / Math.max(pe, 1);
+  const g = (earningsGrowth || 6) / 100;
+  return {
+    bear: Math.max(ey * 0.65, 0.03),
+    base: ey + g * 0.5,
+    bull: ey + g,
+  };
+}
+
+function calcDCA(annualRate, periodicAmt, freq) {
+  const r = (1 + annualRate) ** (1 / freq) - 1;
+  return Array.from({ length: 30 }, (_, i) => {
+    const yr = i + 1;
+    const n = yr * freq;
+    const fv = periodicAmt * ((1 + r) ** n - 1) / r * (1 + r);
+    const invested = periodicAmt * n;
+    const gain = fv - invested;
+    return { yr, fv: Math.round(fv), invested: Math.round(invested), gain: Math.round(gain), gainPct: gain / invested, annualEff: (fv / invested) ** (1 / yr) - 1 };
+  });
+}
+
+function renderPresets() {
+  document.getElementById('idxGrid').innerHTML = PRESETS.map(p => `
+    <button class="idx-btn${p.code === state.selectedCode ? ' active' : ''}" onclick="selectIndex('${p.code}')">
+      <div class="iname">${p.name}</div>
+      <div class="icode">${p.code}</div>
+      <span class="mkt ${mktClass[p.market] || ''}">${p.market}</span>
+    </button>`).join('');
+}
+
+async function selectIndex(code) {
+  state.selectedCode = normalizeCode(code);
+  renderPresets();
+  await refreshSelectedCode();
+}
+
+async function refreshSelectedCode() {
+  const code = state.selectedCode;
+  await Promise.all([fetchPE(code), fetchNews(code)]);
+  if (state.chartMode === 'kline') loadKline();
+}
+
+async function fetchPE(code) {
+  document.getElementById('peBlock').innerHTML = '<div class="loading"><span class="spin"></span>正在获取实时数据...</div>';
+  document.getElementById('rateTable').style.display = 'none';
+  try {
+    const res = await fetch(`${API}/api/pe/${encodeURIComponent(code)}`);
+    if (!res.ok) throw new Error('PE API error');
+    const data = await res.json();
+    state.peData = data;
+    renderPEBlock(data);
+    fetchPEHistory(code);
+    return data;
+  } catch (e) {
+    const fallback = PRESETS.find(p => p.code === code);
+    state.peData = { code, name: fallback?.name || code, market: fallback?.market || 'A股', pe: fallback?.default_pe || 15, earnings_growth: fallback?.earnings_growth || 6, source: '离线默认值', updated_at: '-' };
+    renderPEBlock(state.peData);
+    toast('无法获取 PE，已使用默认值');
+    return state.peData;
+  }
+}
+
+async function fetchPEHistory(code) {
+  try {
+    const res = await fetch(`${API}/api/pe/${encodeURIComponent(code)}/history?years=10`);
+    if (!res.ok) return;
+    const data = await res.json();
+    state.peHistory = data.history || [];
+    if (state.chartMode === 'peHistory') renderPEHistChart();
+  } catch (e) {
+    state.peHistory = [];
+  }
+}
+
+function renderPEBlock(data) {
+  const manualPE = parseFloat(document.getElementById('manualPE').value);
+  const pe = !isNaN(manualPE) && manualPE > 0 ? manualPE : Number(data.pe || 15);
+  const rates = getRates(pe, data.earnings_growth || 6);
+  const pct = data.pe_percentile;
+  const pctColor = pct < 30 ? '#2ecc96' : pct > 70 ? '#f06060' : '#f5a623';
+  const pctLabel = pct < 30 ? '低估区间' : pct > 70 ? '高估区间' : '合理区间';
+
+  document.getElementById('peBlock').innerHTML = `
+    <div class="pe-info">
+      <div class="pe-row">
+        <div>
+          <div class="pe-label">当前市盈率 PE-TTM</div>
+          <div class="pe-val">${pe.toFixed(2)}</div>
+        </div>
+        ${data.pb ? `<div style="text-align:right"><div class="pe-label">PB</div><div class="pe-val" style="font-size:18px">${Number(data.pb).toFixed(2)}</div></div>` : ''}
+      </div>
+      ${pct !== null && pct !== undefined ? `
+        <div class="pe-sub"><span>10年分位 ${pct}%</span><span style="color:${pctColor}">${pctLabel}</span></div>
+        <div class="percentile-bar"><div class="percentile-fill" style="width:${pct}%;background:${pctColor}"></div></div>` : ''}
+      <div class="pe-src">来源: ${data.source || '-'} · ${data.updated_at || '-'}</div>
+    </div>`;
+
+  document.getElementById('rateTable').style.display = 'table';
+  document.getElementById('rateBear').textContent = fmtP(rates.bear);
+  document.getElementById('rateBase').textContent = fmtP(rates.base);
+  document.getElementById('rateBull').textContent = fmtP(rates.bull);
+}
+
+function runCalc() {
+  if (!state.peData) return toast('请先选择指数或股票');
+  const amount = parseFloat(document.getElementById('amount').value) || 2000;
+  const freq = parseInt(document.getElementById('freq').value, 10) || 12;
+  const manualPE = parseFloat(document.getElementById('manualPE').value);
+  const pe = !isNaN(manualPE) && manualPE > 0 ? manualPE : Number(state.peData.pe || 15);
+  const g = state.peData.earnings_growth || 6;
+  const rates = getRates(pe, g);
+  const bear = calcDCA(rates.bear, amount, freq);
+  const base = calcDCA(rates.base, amount, freq);
+  const bull = calcDCA(rates.bull, amount, freq);
+
+  state.calcResult = { bear, base, bull, rates, amount, freq, pe, g };
+  state.chartMode = 'growth';
+  setChartTabs();
+  renderStatCards(base, bull);
+  renderChart();
+  renderTable('base');
+  document.getElementById('chartPanel').style.display = 'block';
+  document.getElementById('tablePanel').style.display = 'block';
+  document.getElementById('exportPanel').style.display = 'block';
+}
+
+function renderStatCards(base, bull) {
+  document.getElementById('statCards').innerHTML = [10, 20, 30].map(y => {
+    const d = base[y - 1];
+    const b = bull[y - 1];
+    return `
+      <div class="stat-card">
+        <div class="sc-yr">${y} 年后（基准）</div>
+        <div class="sc-val">${fmt(d.fv)}</div>
+        <div class="sc-invested">投入 ${fmt(d.invested)}</div>
+        <div class="sc-ret">+${fmtP(d.gainPct)} 总回报</div>
+        <div class="sc-sub">乐观: ${fmt(b.fv)}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderChart() {
+  document.getElementById('lineChartWrap').style.display = state.chartMode === 'kline' ? 'none' : 'block';
+  document.getElementById('klineContainer').style.display = state.chartMode === 'kline' ? 'block' : 'none';
+  document.getElementById('klineToolbar').style.display = state.chartMode === 'kline' ? 'flex' : 'none';
+
+  if (state.chartMode === 'growth') {
+    if (!state.calcResult) {
+      clearLineChart();
+      document.getElementById('growthLegend').innerHTML = '';
+      document.getElementById('lineChartWrap').innerHTML = '<div class="empty">点击“计算收益预测”后显示收益曲线</div>';
+      return;
+    }
+    const { bear, base, bull } = state.calcResult;
+    const labels = Array.from({ length: 30 }, (_, i) => `${i + 1}年`);
+    renderGrowthChart(labels, base, bull, bear);
+  } else if (state.chartMode === 'peHistory') {
+    renderPEHistChart();
+  } else {
+    loadKline();
+  }
+}
+
+function setChartTabs() {
+  const modes = ['growth', 'peHistory', 'kline'];
+  document.querySelectorAll('#chartTabs .tab').forEach((btn, i) => btn.classList.toggle('active', modes[i] === state.chartMode));
+}
+
+function switchChart(mode) {
+  state.chartMode = mode;
+  setChartTabs();
+  renderChart();
+}
+
+function renderGrowthChart(labels, base, bull, bear) {
+  document.getElementById('growthLegend').innerHTML = [
+    { c:'#2ecc96', l:'乐观' }, { c:'#4f8ef7', l:'基准' }, { c:'#f06060', l:'悲观' }, { c:'#5d667d', l:'累计投入' },
+  ].map(x => `<span class="leg"><span class="leg-dot" style="background:${x.c}"></span>${x.l}</span>`).join('');
+  drawLineChart(labels, [
+    { label:'乐观', data: bull.map(d => d.fv), borderColor:'#2ecc96', borderWidth:2, pointRadius:0, tension:.3 },
+    { label:'基准', data: base.map(d => d.fv), borderColor:'#4f8ef7', borderWidth:2.5, pointRadius:0, tension:.3 },
+    { label:'悲观', data: bear.map(d => d.fv), borderColor:'#f06060', borderWidth:2, pointRadius:0, borderDash:[4,3], tension:.3 },
+    { label:'累计投入', data: base.map(d => d.invested), borderColor:'#5d667d', borderWidth:1.5, pointRadius:0, borderDash:[2,2], tension:0 },
+  ], v => v >= 1e8 ? `¥${(v / 1e8).toFixed(1)}亿` : v >= 1e4 ? `¥${(v / 1e4).toFixed(0)}万` : `¥${v}`);
+}
+
+function renderPEHistChart() {
+  document.getElementById('growthLegend').innerHTML = '<span class="leg"><span class="leg-dot" style="background:#f5a623"></span>PE 历史（月度）</span>';
+  if (!state.peHistory.length) {
+    clearLineChart();
+    document.getElementById('lineChartWrap').innerHTML = '<div class="empty">暂无历史 PE 数据</div>';
+    return;
+  }
+  ensureCanvas();
+  drawLineChart(state.peHistory.map(d => d.date.slice(0, 7)), [
+    { label:'PE', data: state.peHistory.map(d => d.pe), borderColor:'#f5a623', borderWidth:2, pointRadius:0, tension:.3 },
+  ], v => Number(v).toFixed(1));
+}
+
+function ensureCanvas() {
+  const wrap = document.getElementById('lineChartWrap');
+  if (!document.getElementById('mainChart')) {
+    wrap.innerHTML = '<canvas id="mainChart" role="img" aria-label="定投收益或PE历史图"></canvas>';
+  }
+}
+
+function clearLineChart() {
+  if (chartInst) {
+    chartInst.destroy();
+    chartInst = null;
+  }
+}
+
+function drawLineChart(labels, datasets, yFmt) {
+  ensureCanvas();
+  clearLineChart();
+  chartInst = new Chart(document.getElementById('mainChart'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode:'index', intersect:false },
+      plugins: {
+        legend: { display:false },
+        tooltip: {
+          backgroundColor:'#1e2537',
+          borderColor:'rgba(255,255,255,.12)',
+          borderWidth:1,
+          titleColor:'#9aa2b8',
+          bodyColor:'#e8eaf0',
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y > 1000 ? fmt(ctx.parsed.y) : ctx.parsed.y}` },
+        },
+      },
+      scales: {
+        x: { grid:{ color:'rgba(255,255,255,.05)' }, ticks:{ color:'#5d667d', font:{ size:11 }, maxTicksLimit:10 } },
+        y: { grid:{ color:'rgba(255,255,255,.05)' }, ticks:{ color:'#5d667d', font:{ size:11 }, callback:yFmt } },
+      },
+    },
+  });
+}
+
+async function loadKline(days = 120, btn = null) {
+  document.getElementById('lineChartWrap').style.display = 'none';
+  document.getElementById('klineContainer').style.display = 'block';
+  document.getElementById('klineToolbar').style.display = 'flex';
+  document.getElementById('growthLegend').innerHTML = '<div class="loading"><span class="spin"></span>加载 K 线...</div>';
+  if (btn) {
+    document.querySelectorAll('.range-btn').forEach(x => x.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  try {
+    const res = await fetch(`${API}/api/kline/${encodeURIComponent(state.selectedCode)}?days=${days}`);
+    if (!res.ok) throw new Error('K-line API error');
+    const data = await res.json();
+    state.klineData = data.klines || [];
+    document.getElementById('klineTitle').textContent = `${data.name || state.selectedCode} 行情`;
+    renderKlineChart(state.klineData);
+  } catch (e) {
+    state.klineData = [];
+    renderKlineChart([]);
+  }
+}
+
+function renderKlineChart(rows) {
+  const legend = document.getElementById('growthLegend');
+  if (!rows.length || !window.LightweightCharts) {
+    legend.innerHTML = '<div class="empty" style="padding:10px 0">暂无 K 线数据</div>';
+    document.getElementById('klineChart').innerHTML = '';
+    document.getElementById('volumeChart').innerHTML = '';
+    return;
+  }
+  const latest = rows[rows.length - 1];
+  const prev = rows.length > 1 ? rows[rows.length - 2] : latest;
+  const chg = latest.close - prev.close;
+  legend.innerHTML = `
+    <span class="leg"><span class="leg-dot" style="background:${chg >= 0 ? '#f06060' : '#2ecc96'}"></span>收盘 ${latest.close.toFixed(2)}</span>
+    <span class="leg">${latest.time}</span>
+    <span class="leg" style="color:${chg >= 0 ? '#f06060' : '#2ecc96'}">${chg >= 0 ? '+' : ''}${chg.toFixed(2)}</span>`;
+
+  const upColor = '#f06060';
+  const downColor = '#2ecc96';
+  const chartEl = document.getElementById('klineChart');
+  const volEl = document.getElementById('volumeChart');
+  chartEl.innerHTML = '';
+  volEl.innerHTML = '';
+
+  klineChart = LightweightCharts.createChart(chartEl, chartOptions(chartEl));
+  const candles = klineChart.addCandlestickSeries({ upColor, downColor, borderUpColor: upColor, borderDownColor: downColor, wickUpColor: upColor, wickDownColor: downColor });
+  candles.setData(rows.map(d => ({ time:d.time, open:d.open, high:d.high, low:d.low, close:d.close })));
+  klineChart.timeScale().fitContent();
+
+  volumeChart = LightweightCharts.createChart(volEl, chartOptions(volEl, false));
+  const volume = volumeChart.addHistogramSeries({ priceFormat:{ type:'volume' }, priceScaleId:'' });
+  volume.setData(rows.map((d, i) => ({ time:d.time, value:d.volume || 0, color: d.close >= d.open ? 'rgba(240,96,96,.55)' : 'rgba(46,204,150,.55)' })));
+  volumeChart.timeScale().fitContent();
+}
+
+function chartOptions(el, showPrice = true) {
+  return {
+    width: el.clientWidth,
+    height: el.clientHeight,
+    layout: { background:{ color:'#161b27' }, textColor:'#9aa2b8' },
+    grid: { vertLines:{ color:'rgba(255,255,255,.05)' }, horzLines:{ color:'rgba(255,255,255,.05)' } },
+    rightPriceScale: { visible: showPrice, borderColor:'rgba(255,255,255,.08)' },
+    timeScale: { borderColor:'rgba(255,255,255,.08)', timeVisible:false },
+    crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+  };
+}
+
+function renderTable(mode) {
+  state.tableMode = mode;
+  ['base','bull','bear'].forEach(m => document.getElementById('t' + m).classList.toggle('active', m === mode));
+  if (!state.calcResult) return;
+  const data = state.calcResult[mode];
+  const hl = new Set([9, 19, 29]);
+  document.getElementById('tableBody').innerHTML = data.map((d, i) => `
+    <tr class="${hl.has(i) ? 'hl' : ''}">
+      <td>第${d.yr}年</td>
+      <td>${fmtN(d.invested)}</td>
+      <td>${fmtN(d.fv)}</td>
+      <td class="pos">+${fmtN(d.gain)}</td>
+      <td class="pos">+${fmtP(d.gainPct)}</td>
+      <td>${fmtP(d.annualEff)}</td>
+    </tr>`).join('');
+}
+function switchTable(mode) { renderTable(mode); }
+
+async function fetchNews(code) {
+  const newsList = document.getElementById('newsList');
+  newsList.innerHTML = '<div class="loading"><span class="spin"></span>加载新闻...</div>';
+  document.getElementById('newsUpdated').textContent = '';
+  try {
+    const res = await fetch(`${API}/api/news/${encodeURIComponent(code)}?limit=10`);
+    if (!res.ok) throw new Error('News API error');
+    const data = await res.json();
+    renderNews(data.articles || []);
+    document.getElementById('newsUpdated').textContent = data.updated_at || '';
+  } catch (e) {
+    renderNews([]);
+  }
+}
+
+function renderNews(items) {
+  const newsList = document.getElementById('newsList');
+  if (!items.length) {
+    newsList.innerHTML = '<div class="empty">暂无相关新闻。A 股股票代码通常能获取东方财富新闻，指数或海外标的可能无新闻源。</div>';
+    return;
+  }
+  newsList.innerHTML = `<div class="news-list">${items.map(item => {
+    const href = item.url || '#';
+    return `
+      <a class="news-item" href="${href}" target="_blank" rel="noopener noreferrer">
+        <div class="news-title">${escapeHtml(item.title)}</div>
+        <div class="news-meta"><span>${escapeHtml(item.source || '新闻')}</span><span>${escapeHtml(item.published_at || '')}</span></div>
+        ${item.summary ? `<div class="news-summary">${escapeHtml(item.summary)}</div>` : ''}
+      </a>`;
+  }).join('')}</div>`;
+}
+
+function escapeHtml(text) {
+  return String(text || '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+async function exportExcel() {
+  if (!state.calcResult) return toast('请先计算');
+  const { rates, amount, freq, pe } = state.calcResult;
+  const name = state.peData?.name || state.selectedCode;
+  const params = new URLSearchParams({ code:state.selectedCode, name, pe, monthly_amount:amount, freq, bear_rate:rates.bear, base_rate:rates.base, bull_rate:rates.bull });
+  try {
+    const res = await fetch(`${API}/api/export/excel?${params}`);
+    if (!res.ok) throw new Error('Export API error');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `定投收益_${name}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Excel 已导出');
+  } catch (e) {
+    exportClientExcel();
+  }
+}
+
+function exportClientExcel() {
+  const { base, bull, bear, rates, amount, freq, pe } = state.calcResult;
+  const wb = XLSX.utils.book_new();
+  const name = state.peData?.name || state.selectedCode;
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+    ['参数', '值'],
+    ['标的', `${name}（${state.selectedCode}）`],
+    ['当前PE', pe],
+    ['每期定投', amount],
+    ['定投频率', freq],
+    ['悲观年化', fmtP(rates.bear)],
+    ['基准年化', fmtP(rates.base)],
+    ['乐观年化', fmtP(rates.bull)],
+  ]), '参数设置');
+  [['基准情景', base], ['乐观情景', bull], ['悲观情景', bear]].forEach(([sheet, data]) => {
+    const rows = [['年份', '累计投入', '组合价值', '收益额', '总收益率', '年化回报']];
+    data.forEach(d => rows.push([`第${d.yr}年`, d.invested, d.fv, d.gain, fmtP(d.gainPct), fmtP(d.annualEff)]));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), sheet);
+  });
+  XLSX.writeFile(wb, `定投收益_${name}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function exportCSV() {
+  if (!state.calcResult) return toast('请先计算');
+  const rows = ['年份,情景,累计投入,组合价值,收益额,总收益率,年化回报'];
+  [['基准', state.calcResult.base], ['乐观', state.calcResult.bull], ['悲观', state.calcResult.bear]].forEach(([label, data]) => {
+    data.forEach(d => rows.push([`第${d.yr}年`, label, d.invested, d.fv, d.gain, fmtP(d.gainPct), fmtP(d.annualEff)].join(',')));
+  });
+  const blob = new Blob(['\ufeff' + rows.join('\n')], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `定投收益_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+}
+
+function printPage() { window.print(); }
+
+document.getElementById('customCode').addEventListener('keydown', async e => {
+  if (e.key !== 'Enter') return;
+  const code = normalizeCode(e.target.value);
+  if (!code) return;
+  state.selectedCode = code;
+  renderPresets();
+  await refreshSelectedCode();
+});
+document.getElementById('manualPE').addEventListener('input', () => {
+  if (state.peData) renderPEBlock(state.peData);
+});
+window.addEventListener('resize', () => {
+  if (state.chartMode === 'kline' && state.klineData.length) renderKlineChart(state.klineData);
+});
+
+document.getElementById('updateTime').textContent = new Date().toLocaleString('zh-CN');
+renderPresets();
+refreshSelectedCode();
+</script>
+</body>
+</html>
