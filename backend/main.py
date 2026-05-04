@@ -139,6 +139,13 @@ def resolve_security(code: str) -> dict[str, Any]:
 
 
 def fetch_a_index_pe(ak_symbol: str) -> dict[str, Any] | None:
+    # 检查PE缓存
+    cache_key = f"pe_{ak_symbol}"
+    if cache_key in _pe_cache:
+        expiry = _pe_cache_expiry.get(cache_key, datetime.min)
+        if datetime.now() < expiry:
+            return _pe_cache[cache_key]
+
     try:
         df = ak.index_value_hist_funddb(symbol=ak_symbol, indicator="市盈率")
         if df is None or df.empty:
@@ -165,13 +172,19 @@ def fetch_a_index_pe(ak_symbol: str) -> dict[str, Any] | None:
         values = pd.to_numeric(recent[value_col], errors="coerce").dropna()
         percentile = round(float((values < pe).mean() * 100), 1) if not values.empty else None
 
-        return {
+        result = {
             "pe": round(pe, 2),
             "pb": round(pb, 2) if pb is not None else None,
             "pe_percentile": percentile,
             "source": "AKShare · 天天基金（备份：静态估值）",
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
+
+        # 缓存PE数据（15分钟）
+        _pe_cache[cache_key] = result
+        _pe_cache_expiry[cache_key] = datetime.now() + timedelta(minutes=15)
+
+        return result
     except Exception as exc:
         logger.warning("A-share index PE fetch failed for %s: %s", ak_symbol, exc)
         return None
@@ -180,6 +193,14 @@ def fetch_a_index_pe(ak_symbol: str) -> dict[str, Any] | None:
 def fetch_a_stock_pe(code: str) -> dict[str, Any] | None:
     if not (code.isdigit() and len(code) == 6):
         return None
+
+    # 检查PE缓存
+    cache_key = f"pe_stock_{code}"
+    if cache_key in _pe_cache:
+        expiry = _pe_cache_expiry.get(cache_key, datetime.min)
+        if datetime.now() < expiry:
+            return _pe_cache[cache_key]
+
     try:
         df = ak.stock_zh_a_spot_em()
         if df is None or df.empty:
@@ -197,13 +218,19 @@ def fetch_a_stock_pe(code: str) -> dict[str, Any] | None:
         pe = safe_float(row.get(pe_col)) if pe_col else None
         if pe is None or pe <= 0:
             return None
-        return {
+        result = {
             "name": str(row.get(name_col, code)).strip() if name_col else code,
             "pe": round(pe, 2),
             "pb": round(safe_float(row.get(pb_col), 0) or 0, 2) if pb_col else None,
             "source": "AKShare · 东方财富行情（备份：默认估值）",
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
+
+        # 缓存PE数据（10分钟，股票变化较快）
+        _pe_cache[cache_key] = result
+        _pe_cache_expiry[cache_key] = datetime.now() + timedelta(minutes=10)
+
+        return result
     except Exception as exc:
         logger.warning("A-share stock PE fetch failed for %s: %s", code, exc)
         return None
@@ -285,12 +312,18 @@ def normalize_kline_df(df: pd.DataFrame, limit: int | None = None, yearly: bool 
 
 
 def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: str = "compact") -> list[dict[str, Any]]:
-    """获取K线数据，使用AKShare国内数据源"""
+    """获取K线数据，使用AKShare国内数据源，支持缓存"""
     code = normalize_code(code)
     period = period if period in {"daily", "weekly", "monthly", "yearly"} else "daily"
     end_date = datetime.now().strftime("%Y%m%d")
     fetch_period = "monthly" if period == "yearly" else period
     start_date = "19900101" if range_ == "all" else (datetime.now() - timedelta(days=max(days * 2, 120))).strftime("%Y%m%d")
+
+    # 检查缓存
+    cache_key = f"{code}_{period}_{range_}"
+    cached = _get_cached_kline(cache_key, days)
+    if cached and cached[0]:
+        return cached[0]
 
     # 获取证券配置信息
     security = resolve_security(code)
@@ -317,6 +350,10 @@ def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: 
                 k["data_source"] = source_used
                 k["currency"] = currency
 
+        # 缓存结果
+        if kline_data:
+            _cache_kline(cache_key, kline_data, source_used, ttl_minutes=10)
+
         return kline_data
 
     except Exception as exc:
@@ -330,6 +367,7 @@ def fetch_kline_data(code: str, days: int = 250, period: str = "daily", range_: 
             for k in kline_data:
                 k["data_source"] = source_used
                 k["currency"] = currency
+            _cache_kline(cache_key, kline_data, source_used, ttl_minutes=5)
         return kline_data
 
 
@@ -493,6 +531,28 @@ def fallback_quote(security: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# 全局缓存，避免重复获取K线数据和PE数据
+_kline_cache: dict[str, tuple[list[dict[str, Any]], str]] = {}
+_cache_expiry: dict[str, datetime] = {}
+_pe_cache: dict[str, dict[str, Any]] = {}
+_pe_cache_expiry: dict[str, datetime] = {}
+
+
+def _get_cached_kline(code: str, days: int = 250) -> tuple[list[dict[str, Any]], str] | None:
+    """从缓存获取K线数据"""
+    if code in _kline_cache:
+        expiry = _cache_expiry.get(code, datetime.min)
+        if datetime.now() < expiry:
+            return _kline_cache[code]
+    return None
+
+
+def _cache_kline(code: str, data: list[dict[str, Any]], source: str, ttl_minutes: int = 15):
+    """缓存K线数据"""
+    _kline_cache[code] = (data, source)
+    _cache_expiry[code] = datetime.now() + timedelta(minutes=ttl_minutes)
+
+
 def fetch_quote_data(code: str) -> dict[str, Any]:
     security = resolve_security(code)
     code = security["code"]
@@ -500,10 +560,75 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
     # 获取货币单位
     currency = _get_currency_from_security(security)
 
-    # 尝试获取实时行情数据
+    # 优先从缓存获取K线数据，避免重复请求
+    kline_data = _get_cached_kline(code, days=8)
+    if kline_data:
+        klines, kline_source = kline_data
+    else:
+        klines = fetch_kline_data(code, days=8, period="daily")
+        kline_source = klines[0].get("data_source", "") if klines else ""
+        # 缓存K线数据
+        if klines:
+            _cache_kline(code, klines, kline_source, ttl_minutes=5)
+
+    # 如果K线数据可用，直接使用最新价格（更快的数据源）
+    if len(klines) >= 1:
+        latest = klines[-1]
+        prev = klines[-2] if len(klines) > 1 else latest
+        price = latest["close"]
+        previous_close = prev["close"] or price
+        change = price - previous_close
+        change_pct = (change / previous_close * 100) if previous_close else 0
+        return {
+            "code": code,
+            "name": security.get("name", code),
+            "market": security.get("market", "-"),
+            "asset_type": security.get("asset_type", "stock"),
+            "price": round(price, 4),
+            "previous_close": round(previous_close, 4),
+            "change": round(change, 4),
+            "change_pct": round(change_pct, 2),
+            "currency": currency,
+            "source": f"{kline_source} · 最新价（快速加载）" if kline_source else "K线数据源",
+            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+
+    # 尝试获取实时行情数据（仅在K线不可用时）
     try:
-        # A股行情
+        # A股行情 - 使用更快的接口
         if code.isdigit() and len(code) == 6:
+            try:
+                # 使用更快的单只股票接口
+                df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=(datetime.now() - timedelta(days=5)).strftime("%Y%m%d"), end_date=datetime.now().strftime("%Y%m%d"))
+                if df is not None and not df.empty:
+                    date_col = first_col(list(df.columns), ["日期", "date"], ["日期", "date"])
+                    close_col = first_col(list(df.columns), ["收盘", "收盘价", "close"], ["close", "收盘"])
+                    if date_col and close_col:
+                        df = df.sort_values(date_col)
+                        latest = df.iloc[-1]
+                        prev = df.iloc[-2] if len(df) > 1 else latest
+                        price = safe_float(latest[close_col])
+                        previous_close = safe_float(prev[close_col])
+                        if price and price > 0:
+                            change = price - previous_close
+                            change_pct = (change / previous_close * 100) if previous_close else 0
+                            return {
+                                "code": code,
+                                "name": security.get("name", code),
+                                "market": security.get("market", "-"),
+                                "asset_type": security.get("asset_type", "stock"),
+                                "price": round(price, 4),
+                                "previous_close": round(previous_close, 4),
+                                "change": round(change, 4),
+                                "change_pct": round(change_pct, 2),
+                                "currency": currency,
+                                "source": "AKShare · A股K线最新价（快速加载）",
+                                "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            }
+            except Exception:
+                pass
+
+            # 降级到实时行情接口（较慢，但作为备用）
             df = ak.stock_zh_a_spot_em()
             if df is not None and not df.empty:
                 code_col = first_col(list(df.columns), ["代码", "code"], ["代码", "code"])
@@ -633,29 +758,6 @@ def fetch_quote_data(code: str) -> dict[str, Any]:
                 logger.debug("US stock quote failed for %s: %s", code, exc)
     except Exception as exc:
         logger.debug("Quote fetch failed for %s: %s", code, exc)
-
-    # 如果实时行情获取失败，从K线数据获取最新价格（与K线图数据源一致）
-    rows = fetch_kline_data(code, days=8, period="daily")
-    if len(rows) >= 1:
-        latest = rows[-1]
-        prev = rows[-2] if len(rows) > 1 else latest
-        price = latest["close"]
-        previous_close = prev["close"] or price
-        change = price - previous_close
-        change_pct = (change / previous_close * 100) if previous_close else 0
-        return {
-            "code": code,
-            "name": security.get("name", code),
-            "market": security.get("market", "-"),
-            "asset_type": security.get("asset_type", "stock"),
-            "price": round(price, 4),
-            "previous_close": round(previous_close, 4),
-            "change": round(change, 4),
-            "change_pct": round(change_pct, 2),
-            "currency": currency,
-            "source": "AKShare · K线最新价（与K线图数据源一致）",
-            "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        }
     return fallback_quote(security)
 
 
