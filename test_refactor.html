@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>前端重构测试页面</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  h1, h2 { color: #333; }
+  .test-section { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+  .test-section h2 { margin-top: 0; }
+  .result { margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 4px; }
+  .success { color: #2ecc96; }
+  .error { color: #f06060; }
+  .loading { color: #666; }
+  button { padding: 8px 16px; margin-right: 10px; background: #4f8ef7; color: white; border: none; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #3671d9; }
+  button:disabled { background: #ccc; cursor: not-allowed; }
+  .index-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; margin-top: 15px; }
+  .index-card { padding: 12px; background: #fff; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; }
+  .index-card:hover { background: #f0f8ff; }
+  .index-code { font-family: monospace; font-weight: bold; color: #4f8ef7; }
+  .index-name { margin-top: 5px; font-weight: 500; }
+  .index-desc { font-size: 12px; color: #666; margin-top: 3px; }
+</style>
+</head>
+<body>
+<h1>🧪 前端重构测试页面</h1>
+
+<div class="test-section">
+  <h2>1. 市场指数选择测试</h2>
+  <p>测试三个市场的指数加载功能</p>
+  <div style="margin-bottom: 15px;">
+    <button onclick="testAsiaIndices()">亚洲市场</button>
+    <button onclick="testEuropeIndices()">欧洲市场</button>
+    <button onclick="testAmericasIndices()">美洲市场</button>
+    <button onclick="testAllIndices()">测试全部</button>
+  </div>
+  <div id="marketTestResult" class="result">点击按钮开始测试</div>
+  <div id="indexDisplay"></div>
+</div>
+
+<div class="test-section">
+  <h2>2. 搜索联想功能测试</h2>
+  <p>测试搜索建议和跨市场搜索</p>
+  <input type="text" id="searchInput" placeholder="输入代码或名称搜索..." style="padding: 8px; width: 300px; margin-bottom: 10px;">
+  <button onclick="testSearch()">搜索</button>
+  <div id="searchResult" class="result"></div>
+  <div id="suggestions" style="margin-top: 10px;"></div>
+</div>
+
+<div class="test-section">
+  <h2>3. 前端代码检查</h2>
+  <p>检查重构后的HTML结构</p>
+  <button onclick="checkFrontendStructure()">检查结构</button>
+  <div id="structureResult" class="result"></div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+
+async function testAsiaIndices() {
+  document.getElementById('marketTestResult').innerHTML = '<span class="loading">正在加载亚洲市场指数...</span>';
+  try {
+    const res = await fetch(`${API}/api/search?region=亚洲市场&asset_type=index&limit=30`);
+    const data = await res.json();
+    const indices = data.results.filter(item => item.asset_type === 'index');
+    document.getElementById('marketTestResult').innerHTML = 
+      `<span class="success">✓ 亚洲市场: 找到 ${indices.length} 个指数</span>`;
+    displayIndices(indices);
+  } catch (e) {
+    document.getElementById('marketTestResult').innerHTML = 
+      `<span class="error">✗ 加载失败: ${e.message}</span>`;
+  }
+}
+
+async function testEuropeIndices() {
+  document.getElementById('marketTestResult').innerHTML = '<span class="loading">正在加载欧洲市场指数...</span>';
+  try {
+    const res = await fetch(`${API}/api/search?region=欧洲市场&asset_type=index&limit=30`);
+    const data = await res.json();
+    const indices = data.results.filter(item => item.asset_type === 'index');
+    document.getElementById('marketTestResult').innerHTML = 
+      `<span class="success">✓ 欧洲市场: 找到 ${indices.length} 个指数</span>`;
+    displayIndices(indices);
+  } catch (e) {
+    document.getElementById('marketTestResult').innerHTML = 
+      `<span class="error">✗ 加载失败: ${e.message}</span>`;
+  }
+}
+
+async function testAmericasIndices() {
+  document.getElementById('marketTestResult').innerHTML = '<span class="loading">正在加载美洲市场指数...</span>';
+  try {
+    const res = await fetch(`${API}/api/search?region=美洲市场&asset_type=index&limit=30`);
+    const data = await res.json();
+    const indices = data.results.filter(item => item.asset_type === 'index');
+    document.getElementById('marketTestResult').innerHTML = 
+      `<span class="success">✓ 美洲市场: 找到 ${indices.length} 个指数</span>`;
+    displayIndices(indices);
+  } catch (e) {
+    document.getElementById('marketTestResult').innerHTML = 
+      `<span class="error">✗ 加载失败: ${e.message}</span>`;
+  }
+}
+
+async function testAllIndices() {
+  document.getElementById('marketTestResult').innerHTML = '<span class="loading">正在测试所有市场...</span>';
+  const results = [];
+  
+  const markets = [
+    { name: '亚洲市场', id: 'asia' },
+    { name: '欧洲市场', id: 'europe' },
+    { name: '美洲市场', id: 'americas' }
+  ];
+  
+  for (const market of markets) {
+    try {
+      const res = await fetch(`${API}/api/search?region=${market.name}&asset_type=index&limit=30`);
+      const data = await res.json();
+      const indices = data.results.filter(item => item.asset_type === 'index');
+      results.push(`${market.name}: ${indices.length} 个`);
+    } catch (e) {
+      results.push(`${market.name}: 加载失败`);
+    }
+  }
+  
+  document.getElementById('marketTestResult').innerHTML = 
+    `<span class="success">✓ 测试完成</span><br>${results.join('<br>')}`;
+}
+
+function displayIndices(indices) {
+  const display = document.getElementById('indexDisplay');
+  display.innerHTML = '<div class="index-grid">' + 
+    indices.slice(0, 6).map(idx => `
+      <div class="index-card" onclick="selectIndex('${idx.code}')">
+        <div class="index-code">${idx.code}</div>
+        <div class="index-name">${idx.name}</div>
+        <div class="index-desc">${idx.description || idx.asset_type}</div>
+      </div>
+    `).join('') + 
+    '</div>';
+}
+
+function selectIndex(code) {
+  alert(`选中指数: ${code}`);
+}
+
+async function testSearch() {
+  const query = document.getElementById('searchInput').value;
+  if (!query) {
+    document.getElementById('searchResult').innerHTML = '<span class="error">请输入搜索关键词</span>';
+    return;
+  }
+  
+  document.getElementById('searchResult').innerHTML = '<span class="loading">正在搜索...</span>';
+  try {
+    const res = await fetch(`${API}/api/search?q=${encodeURIComponent(query)}&limit=10`);
+    const data = await res.json();
+    
+    const results = data.results || [];
+    const regions = {};
+    results.forEach(item => {
+      regions[item.region] = (regions[item.region] || 0) + 1;
+    });
+    
+    document.getElementById('searchResult').innerHTML = 
+      `<span class="success">✓ 找到 ${results.length} 个结果</span><br>` +
+      `涉及市场: ${Object.entries(regions).map(([r, c]) => `${r}(${c})`).join(', ')}`;
+    
+    document.getElementById('suggestions').innerHTML = 
+      '<div class="index-grid">' +
+      results.map(item => `
+        <div class="index-card" onclick="selectIndex('${item.code}')">
+          <div class="index-code">${item.code}</div>
+          <div class="index-name">${item.name}</div>
+          <div class="index-desc">${item.market} · ${item.region}</div>
+        </div>
+      `).join('') +
+      '</div>';
+  } catch (e) {
+    document.getElementById('searchResult').innerHTML = 
+      `<span class="error">✗ 搜索失败: ${e.message}</span>`;
+  }
+}
+
+function checkFrontendStructure() {
+  const checks = [
+    { id: 'searchInput', name: '搜索框' },
+    { id: 'searchSuggestions', name: '搜索建议容器' },
+    { id: 'marketTabs', name: '市场标签页' },
+    { id: 'asiaContent', name: '亚洲市场内容区' },
+    { id: 'europeContent', name: '欧洲市场内容区' },
+    { id: 'americasContent', name: '美洲市场内容区' },
+    { id: 'asiaGrid', name: '亚洲市场网格' },
+    { id: 'europeGrid', name: '欧洲市场网格' },
+    { id: 'americasGrid', name: '美洲市场网格' }
+  ];
+  
+  let results = [];
+  checks.forEach(check => {
+    const el = document.getElementById(check.id);
+    const status = el ? '<span class="success">✓</span>' : '<span class="error">✗</span>';
+    results.push(`${status} ${check.name} (${check.id})`);
+  });
+  
+  document.getElementById('structureResult').innerHTML = results.join('<br>');
+}
+
+// 页面加载完成后自动检查结构
+window.onload = () => {
+  checkFrontendStructure();
+};
+</script>
+</body>
+</html>

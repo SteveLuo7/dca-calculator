@@ -68,7 +68,16 @@
   .suggestion-tag { padding: 2px 6px; border-radius: 4px; background: rgba(79,142,247,.12); color: var(--accent); }
   .suggestion-tag.hot { background: rgba(245,166,35,.12); color: var(--amber); }
 
-  /* 区域标签页 */
+  /* 市场标签页 */
+  .market-tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
+  .market-tab { border: 1px solid var(--border); background: transparent; color: var(--text2); border-radius: 6px; padding: 6px 18px; font-size: 12px; cursor: pointer; transition: .15s; flex: 1; text-align: center; }
+  .market-tab:hover { border-color: var(--border2); color: var(--text); }
+  .market-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* 市场内容区域 */
+  .market-content.hidden { display: none !important; }
+
+  /* 区域标签页（旧样式，保留兼容） */
   .region-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
   .region-tab { border: 1px solid var(--border); background: transparent; color: var(--text2); border-radius: 6px; padding: 6px 14px; font-size: 12px; cursor: pointer; transition: .15s; }
   .region-tab:hover { border-color: var(--border2); }
@@ -189,42 +198,40 @@
 
   <div class="main-grid">
     <div class="left-col">
+      <!-- 搜索模块 -->
       <section class="panel">
-        <div class="panel-title">选择投资标的</div>
-
-        <!-- 搜索框 -->
+        <div class="panel-title">搜索标的</div>
         <div class="search-container">
           <span class="search-icon">🔍</span>
-          <input id="searchInput" class="search-input" type="text" placeholder="搜索代码、名称或公司..." />
+          <input id="searchInput" class="search-input" type="text" placeholder="输入代码、名称或公司进行搜索..." />
           <div id="searchSuggestions" class="search-suggestions"></div>
         </div>
+      </section>
 
-        <!-- 区域标签 -->
-        <div class="region-tabs" id="regionTabs">
-          <button class="region-tab active" data-region="全部">全部</button>
-          <button class="region-tab" data-region="亚洲市场">亚洲市场</button>
-          <button class="region-tab" data-region="欧洲市场">欧洲市场</button>
-          <button class="region-tab" data-region="美洲市场">美洲市场</button>
+      <!-- 市场指数选择模块 -->
+      <section class="panel">
+        <div class="panel-title">选择市场指数</div>
+
+        <!-- 市场标签页 -->
+        <div class="market-tabs" id="marketTabs">
+          <button class="market-tab active" data-market="asia">亚洲市场</button>
+          <button class="market-tab" data-market="europe">欧洲市场</button>
+          <button class="market-tab" data-market="americas">美洲市场</button>
         </div>
 
-        <!-- 资产类型筛选 -->
-        <div class="type-filters" id="typeFilters">
-          <button class="type-filter active" data-type="">全部</button>
-          <button class="type-filter" data-type="index">指数</button>
-          <button class="type-filter" data-type="stock">股票</button>
-          <button class="type-filter" data-type="fund">基金</button>
-          <button class="type-filter" data-type="hot">热门</button>
+        <!-- 亚洲市场指数 -->
+        <div class="market-content" id="asiaContent">
+          <div class="asset-grid" id="asiaGrid"></div>
         </div>
 
-        <!-- 资产列表 -->
-        <div class="asset-grid" id="assetGrid">
-          <div class="loading"><span class="spin"></span>加载中...</div>
+        <!-- 欧洲市场指数 -->
+        <div class="market-content" id="europeContent" style="display:none">
+          <div class="asset-grid" id="europeGrid"></div>
         </div>
 
-        <!-- 自定义代码 -->
-        <div class="field" style="margin-top:12px">
-          <label>自定义代码</label>
-          <input id="customCode" type="text" placeholder="例如：000300、AAPL、0700.HK" />
+        <!-- 美洲市场指数 -->
+        <div class="market-content" id="americasContent" style="display:none">
+          <div class="asset-grid" id="americasGrid"></div>
         </div>
       </section>
 
@@ -378,9 +385,6 @@ let state = {
   chartMode: 'kline',
   klinePeriod: 'daily',
   klineRange: 'all',
-  filterRegion: '全部',
-  filterType: '',
-  searchQuery: '',
 };
 let chartInst = null;
 let klineChart = null;
@@ -408,7 +412,7 @@ function getTagClass(market, assetType, isHot) {
 function renderAssetCard(asset) {
   const isActive = asset.code === state.selectedCode;
   return `
-    <div class="asset-card${isActive ? ' active' : ''}" onclick="selectAsset('${asset.code}')">
+    <div class="asset-card${isActive ? ' active' : ''}" data-code="${asset.code}" onclick="selectAsset('${asset.code}')">
       <div class="asset-header">
         <div>
           <div class="asset-name">${asset.name}</div>
@@ -423,30 +427,81 @@ function renderAssetCard(asset) {
     </div>`;
 }
 
-async function loadAssets() {
-  const assetGrid = document.getElementById('assetGrid');
-  assetGrid.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
+// 加载各市场指数
+async function loadMarketIndices() {
+  await Promise.all([
+    loadAsiaIndices(),
+    loadEuropeIndices(),
+    loadAmericasIndices()
+  ]);
+}
+
+async function loadAsiaIndices() {
+  const grid = document.getElementById('asiaGrid');
+  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
 
   try {
-    const regionParam = state.filterRegion === '全部' ? '' : state.filterRegion;
-    const typeParam = state.filterType === 'hot' ? '' : state.filterType;
-    const hotOnly = state.filterType === 'hot';
-
-    const res = await fetch(`${API}/api/search?region=${encodeURIComponent(regionParam)}&asset_type=${encodeURIComponent(typeParam)}&hot_only=${hotOnly}&limit=50`);
-    if (!res.ok) throw new Error('Search API error');
+    const res = await fetch(`${API}/api/search?region=亚洲市场&asset_type=index&limit=30`);
+    if (!res.ok) throw new Error('API error');
     const data = await res.json();
-    state.currentAssets = data.results || [];
+    const indices = (data.results || []).filter(item => item.asset_type === 'index');
 
-    assetGrid.innerHTML = state.currentAssets.map(asset => renderAssetCard(asset)).join('');
+    grid.innerHTML = indices.length > 0
+      ? indices.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无指数数据</div>';
   } catch (e) {
-    assetGrid.innerHTML = '<div class="empty">加载失败，请刷新重试</div>';
-    console.error(e);
+    grid.innerHTML = '<div class="empty">加载失败</div>';
+    console.error('Asia indices error:', e);
+  }
+}
+
+async function loadEuropeIndices() {
+  const grid = document.getElementById('europeGrid');
+  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
+
+  try {
+    const res = await fetch(`${API}/api/search?region=欧洲市场&asset_type=index&limit=30`);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    const indices = (data.results || []).filter(item => item.asset_type === 'index');
+
+    grid.innerHTML = indices.length > 0
+      ? indices.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无指数数据</div>';
+  } catch (e) {
+    grid.innerHTML = '<div class="empty">加载失败</div>';
+    console.error('Europe indices error:', e);
+  }
+}
+
+async function loadAmericasIndices() {
+  const grid = document.getElementById('americasGrid');
+  grid.innerHTML = '<div class="loading"><span class="spin"></span>加载中...</div>';
+
+  try {
+    const res = await fetch(`${API}/api/search?region=美洲市场&asset_type=index&limit=30`);
+    if (!res.ok) throw new Error('API error');
+    const data = await res.json();
+    const indices = (data.results || []).filter(item => item.asset_type === 'index');
+
+    grid.innerHTML = indices.length > 0
+      ? indices.map(asset => renderAssetCard(asset)).join('')
+      : '<div class="empty">暂无指数数据</div>';
+  } catch (e) {
+    grid.innerHTML = '<div class="empty">加载失败</div>';
+    console.error('Americas indices error:', e);
   }
 }
 
 async function selectAsset(code) {
   state.selectedCode = code;
-  loadAssets();
+  // 更新选中状态
+  document.querySelectorAll('.asset-card').forEach(card => {
+    card.classList.remove('active');
+    if (card.dataset.code === code) {
+      card.classList.add('active');
+    }
+  });
   await refreshSelectedCode();
 }
 
@@ -971,31 +1026,25 @@ document.getElementById('searchInput').addEventListener('blur', () => {
   setTimeout(() => document.getElementById('searchSuggestions').classList.remove('show'), 200);
 });
 
+// 市场标签切换
+document.querySelectorAll('.market-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.market-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    const market = btn.dataset.market;
+    document.getElementById('asiaContent').style.display = market === 'asia' ? 'block' : 'none';
+    document.getElementById('europeContent').style.display = market === 'europe' ? 'block' : 'none';
+    document.getElementById('americasContent').style.display = market === 'americas' ? 'block' : 'none';
+  });
+});
+
+// 兼容旧的region-tab监听器（如果存在）
 document.querySelectorAll('.region-tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.region-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    state.filterRegion = btn.dataset.region;
-    loadAssets();
   });
-});
-
-document.querySelectorAll('.type-filter').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.type-filter').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    state.filterType = btn.dataset.type;
-    loadAssets();
-  });
-});
-
-document.getElementById('customCode').addEventListener('keydown', async e => {
-  if (e.key !== 'Enter') return;
-  const code = e.target.value.trim().toUpperCase();
-  if (!code) return;
-  state.selectedCode = code;
-  loadAssets();
-  await refreshSelectedCode();
 });
 
 document.getElementById('manualPE').addEventListener('input', () => {
@@ -1007,7 +1056,7 @@ window.addEventListener('resize', () => {
 });
 
 document.getElementById('updateTime').textContent = new Date().toLocaleString('zh-CN');
-loadAssets();
+loadMarketIndices();
 </script>
 </body>
 </html>
